@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>なりたい自分メーター</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F1F4F2; --surface: #FFFFFF; --ink: #16241F; --muted: #62736C; --line: #D5DDD9;
+  --accent: #1F8A6E; --accent-ink: #FFFFFF; --bar-bg: #DDE5E1; --today: #E3F3EC; --warn: #B3261E;
+  color-scheme: light;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1815; --surface: #17231F; --ink: #E7F0EC; --muted: #8DA39A; --line: #2A3A34;
+    --accent: #3FC9A0; --accent-ink: #0B1512; --bar-bg: #26352F; --today: #1B3029; --warn: #FF8A80;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1815; --surface: #17231F; --ink: #E7F0EC; --muted: #8DA39A; --line: #2A3A34;
+  --accent: #3FC9A0; --accent-ink: #0B1512; --bar-bg: #26352F; --today: #1B3029; --warn: #FF8A80;
+  color-scheme: dark;
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; line-height: 1.7; }
+main { max-width: 520px; margin: 0 auto; padding: 20px 18px 56px; }
+button, input, textarea, select { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+
+.bar { height: 14px; background: var(--bar-bg); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .45s ease; }
+.sync { text-align: right; font-size: 12px; color: var(--muted); min-height: 20px; margin: -4px 0 6px; }
+.sync.warn { color: var(--warn); font-weight: 700; }
+
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0 0 18px; background: var(--bar-bg); padding: 4px; border-radius: 12px; }
+.tab { border: 0; background: none; padding: 10px 0; border-radius: 9px; font-weight: 700; cursor: pointer; color: var(--muted); }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--ink); }
+
+h2 { font-size: 16px; margin: 24px 0 8px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+.muted { color: var(--muted); font-size: 14px; }
+.goal-name { font-size: 20px; font-weight: 900; margin: 0; }
+.empty { text-align: center; padding: 24px 12px; color: var(--muted); }
+.role { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 9px; border-radius: 999px; margin-right: 8px; vertical-align: middle; background: var(--accent); color: var(--accent-ink); }
+.role.sub { background: var(--bar-bg); color: var(--muted); }
+.gtag { font-size: 12px; color: var(--muted); }
+.now { font-size: 13px; font-weight: 900; color: var(--accent); }
+
+.t { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; min-height: 52px; }
+.t[disabled] { opacity: .5; cursor: default; }
+.box { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--muted); flex: none; display: grid; place-items: center; font-size: 15px; font-weight: 900; color: var(--accent-ink); }
+.t.on .box { background: var(--accent); border-color: var(--accent); }
+.t.on .nm { color: var(--muted); text-decoration: line-through; }
+.nm { flex: 1; font-weight: 700; }
+.ms-mark { font-size: 13px; font-weight: 700; color: var(--accent); }
+
+.wk-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.wk-nav button { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; width: 44px; height: 40px; cursor: pointer; }
+.wg { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.wg .del { width: 36px; height: 36px; }
+
+label.l { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+input[type="text"], input[type="date"], input[type="email"], input[type="password"], textarea { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; resize: vertical; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { flex: 1; min-width: 40px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-weight: 700; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.switch { margin-bottom: 14px; }
+.switch .chip { flex: 0 1 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.primary { width: 100%; padding: 12px; border-radius: 10px; border: 0; background: var(--ink); color: var(--bg); font-weight: 700; cursor: pointer; margin-top: 10px; }
+.primary[disabled] { opacity: .6; cursor: default; }
+.ghost { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 13px; padding: 6px 4px; }
+.danger { color: var(--warn); }
+.ms-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.ms-head input { font-weight: 700; }
+.del { background: none; border: 0; color: var(--muted); font-size: 20px; width: 40px; height: 40px; cursor: pointer; border-radius: 10px; flex: none; }
+.tr { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.tr .nm { font-size: 15px; }
+.imp { flex-basis: 100%; display: flex; align-items: center; gap: 8px; padding: 0 0 6px 44px; font-size: 13px; color: var(--muted); }
+.imp .ibar { flex: 1; height: 8px; background: var(--bar-bg); border-radius: 999px; overflow: hidden; }
+.imp .ibar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.imp select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.add-t { margin-top: 10px; display: grid; gap: 8px; }
+.centered { text-align: center; }
+.overlay { position: fixed; inset: 0; background: var(--bg); z-index: 20; overflow-y: auto; padding: calc(env(safe-area-inset-top, 0px) + 20px) 18px calc(env(safe-area-inset-bottom, 0px) + 40px); }
+.overlay > div { max-width: 520px; margin: 0 auto; }
+#auth { z-index: 30; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .bar-fill { transition: none; } }
+</style>
+</head>
+<body>
+<main id="app" hidden>
+  <div class="sync" id="sync" aria-live="polite"></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="week">今週</button>
+    <button class="tab" role="tab" data-tab="month">今月</button>
+    <button class="tab" role="tab" data-tab="plan">計画</button>
+  </div>
+  <div class="centered" style="margin:-6px 0 14px"><button class="ghost" id="whyBtn">💭 なぜやるんだっけ？</button></div>
+
+  <div id="view"></div>
+  <div id="rescue" class="overlay" hidden></div>
+</main>
+
+<div id="auth" class="overlay">
+  <div>
+    <h1 style="font-size:24px;margin:24px 0 4px">なりたい自分メーター</h1>
+    <p class="muted" style="margin:0 0 18px">期限から逆算して、毎週の行動に落とし込む。</p>
+    <div class="card" id="authBody"><p class="muted" style="margin:0">読み込み中…</p></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+<script>
+(function () {
+  /* ---------- Supabase ---------- */
+  var SUPABASE_URL = "https://wrgqeutvzxfmwgftyvem.supabase.co";
+  var SUPABASE_KEY = "sb_publishable_98uVa_982d0HmQlK0FRluw_Idvh_9Iz"; /* publishable key: safe to be public */
+  var sb = null;
+  try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch (e) { sb = null; }
+
+  var PERIODS = [
+    { k: "1m", m: 1, label: "1ヶ月後" }, { k: "3m", m: 3, label: "3ヶ月後" }, { k: "6m", m: 6, label: "6ヶ月後" },
+    { k: "1y", m: 12, label: "1年後" }, { k: "3y", m: 36, label: "3年後" }, { k: "5y", m: 60, label: "5年後" }, { k: "10y", m: 120, label: "10年後" }
+  ];
+
+  var user = null;
+  var state = null;
+  var tab = "week";
+  var weekOffset = 0;
+  var monthOffset = 0;
+  var activeId = null;
+  var ioMode = "";
+  var saveTimer = null, saving = false, dirty = false, lastSynced = 0;
+  var authMode = "signin", recovery = false, booted = false;
+
+  /* ---------- state ---------- */
+  function mkGoal(id, role) {
+    return { id: id, role: role, name: "", why: "", note: "", memo: "", start: dstr(new Date()), end: "", period: "", milestones: [], tasks: [], weekGoals: {}, weekTodos: {} };
+  }
+  function blank() { return { goals: [mkGoal(1, "main")], done: {}, nextId: 2, maxSubs: 2 }; }
+
+  /* weekly goal = one text per week; weekly todos = things to do for that goal.
+     Older data stored several goal texts per week: the first stays the goal, the rest become todos. */
+  function normalize(s) {
+    if (s.maxSubs == null) s.maxSubs = 2;
+    s.done = s.done || {};
+    s.goals.forEach(function (g) {
+      g.milestones = g.milestones || []; g.tasks = g.tasks || [];
+      g.weekGoals = g.weekGoals || {};
+      g.weekTodos = g.weekTodos || {};
+      Object.keys(g.weekGoals).forEach(function (k) {
+        var v = g.weekGoals[k];
+        if (Array.isArray(v)) {
+          var items = v.filter(function (x) { return x; });
+          g.weekGoals[k] = items[0] || "";
+          if (items.length > 1) {
+            g.weekTodos[k] = g.weekTodos[k] || [];
+            items.slice(1).forEach(function (x) { g.weekTodos[k].push({ id: s.nextId++, name: x, done: false }); });
+          }
+        }
+      });
+    });
+    return s;
+  }
+  function validState(s) {
+    return !!(s && typeof s === "object" && Array.isArray(s.goals) && s.goals.length &&
+      s.goals.every(function (g) { return g && typeof g === "object" && g.id != null && g.role; }));
+  }
+
+  /* ---------- local cache + cloud save ---------- */
+  function cacheKey() { return "wiwb:" + (user ? user.id : "anon"); }
+  function cacheLocal() { try { localStorage.setItem(cacheKey(), JSON.stringify(state)); } catch (e) {} }
+
+  function setStatus(text, warn) {
+    var el = document.getElementById("sync");
+    el.textContent = text || "";
+    el.className = "sync" + (warn ? " warn" : "");
+  }
+
+  function save() {
+    cacheLocal();
+    if (!user) return;
+    dirty = true;
+    setStatus("保存中…");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flush, 700);
+  }
+
+  function flush() {
+    if (!user || !dirty) return;
+    if (saving) { saveTimer = setTimeout(flush, 300); return; }
+    saving = true; dirty = false;
+    var nowMs = Date.now();
+    sb.from("user_state").upsert({ user_id: user.id, data: state, updated_at: new Date(nowMs).toISOString() }).then(function (res) {
+      saving = false;
+      if (res.error) {
+        dirty = true;
+        setStatus("保存できていません。通信を確認してください（自動で再試行します）", true);
+        saveTimer = setTimeout(flush, 5000);
+      } else {
+        lastSynced = nowMs;
+        if (!dirty) setStatus("保存しました");
+      }
+    });
+  }
+
+  function checkRemote() {
+    if (!user || saving || dirty) return;
+    sb.from("user_state").select("data,updated_at").eq("user_id", user.id).maybeSingle().then(function (res) {
+      if (res.error || !res.data || saving || dirty) return;
+      var remoteMs = Date.parse(res.data.updated_at);
+      if (remoteMs > lastSynced && validState(res.data.data)) {
+        state = normalize(res.data.data); lastSynced = remoteMs; cacheLocal();
+        ensureActive(); renderView();
+        setStatus("別の端末での更新を反映しました");
+      }
+    });
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") checkRemote(); });
+
+  /* ---------- auth ---------- */
+  function jaError(err) {
+    var m = (err && err.message) || "";
+    if (/invalid login credentials/i.test(m)) return "メールアドレスかパスワードが違います。";
+    if (/email not confirmed/i.test(m)) return "メールの確認がまだです。届いたメールのリンクを開いてください。";
+    if (/already registered|already been registered/i.test(m)) return "このメールアドレスは登録済みです。ログインしてください。";
+    if (/at least \d+ char/i.test(m) || /weak/i.test(m)) return "パスワードが弱すぎます。8文字以上にして、推測されにくいものにしてください。";
+    if (/rate limit|too many/i.test(m)) return "短時間に操作しすぎました。しばらくしてからもう一度お試しください。";
+    if (/valid email|invalid email/i.test(m)) return "メールアドレスの形式を確認してください。";
+    if (/network|fetch/i.test(m)) return "通信できませんでした。ネットワークを確認してください。";
+    return "うまくいきませんでした：" + m;
+  }
+
+  function showAuth() {
+    document.getElementById("auth").hidden = false;
+    renderAuth("");
+  }
+
+  function renderAuth(msg, email) {
+    var body = document.getElementById("authBody");
+    if (!sb) {
+      body.innerHTML = '<p style="margin:0">ログイン機能を読み込めませんでした。通信を確認して、ページを再読み込みしてください。</p>';
+      return;
+    }
+    var prevEmail = email != null ? email : ((document.getElementById("em") || {}).value || "");
+    var h = "";
+    if (recovery) {
+      h += '<b>新しいパスワードを決める</b><label class="l" for="pw">新しいパスワード（8文字以上）</label><input id="pw" type="password" autocomplete="new-password">' +
+        '<p id="authMsg" class="muted" role="alert" style="margin:10px 0 0"></p><button class="primary" id="authGo">パスワードを変更する</button>';
+    } else if (authMode === "forgot") {
+      h += '<b>パスワードの再設定</b><label class="l" for="em">メールアドレス</label><input id="em" type="email" autocomplete="email" value="' + esc(prevEmail) + '">' +
+        '<p id="authMsg" class="muted" role="alert" style="margin:10px 0 0"></p><button class="primary" id="authGo">再設定メールを送る</button>' +
+        '<div class="centered"><button class="ghost" data-am="signin">ログインにもどる</button></div>';
+    } else {
+      var up = authMode === "signup";
+      h += '<b>' + (up ? "新規登録" : "ログイン") + '</b><label class="l" for="em">メールアドレス</label><input id="em" type="email" autocomplete="email" value="' + esc(prevEmail) + '">' +
+        '<label class="l" for="pw">パスワード（8文字以上）</label><input id="pw" type="password" autocomplete="' + (up ? "new-password" : "current-password") + '">' +
+        '<p id="authMsg" class="muted" role="alert" style="margin:10px 0 0"></p><button class="primary" id="authGo">' + (up ? "登録する" : "ログインする") + '</button>' +
+        '<div class="centered">' + (up ? '<button class="ghost" data-am="signin">アカウントをお持ちの方はログイン</button>' : '<button class="ghost" data-am="signup">はじめての方は新規登録</button>') +
+        (up ? "" : '<button class="ghost" data-am="forgot">パスワードを忘れた</button>') + "</div>";
+    }
+    body.innerHTML = h;
+    if (msg) document.getElementById("authMsg").textContent = msg;
+  }
+
+  function authMessage(text) { var el = document.getElementById("authMsg"); if (el) el.textContent = text; }
+
+  function submitAuth() {
+    var btn = document.getElementById("authGo");
+    var emailEl = document.getElementById("em"), pwEl = document.getElementById("pw");
+    var email = emailEl ? emailEl.value.trim() : "", pw = pwEl ? pwEl.value : "";
+    function busy(on) { btn.disabled = on; }
+    if (recovery) {
+      if (pw.length < 8) { authMessage("パスワードは8文字以上にしてください。"); return; }
+      busy(true);
+      sb.auth.updateUser({ password: pw }).then(function (res) {
+        busy(false);
+        if (res.error) { authMessage(jaError(res.error)); return; }
+        recovery = false;
+        document.getElementById("auth").hidden = true;
+        if (!state && user) enterApp(user);
+      });
+      return;
+    }
+    if (!email) { authMessage("メールアドレスを入れてください。"); return; }
+    if (authMode === "forgot") {
+      busy(true);
+      sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }).then(function (res) {
+        busy(false);
+        authMessage(res.error ? jaError(res.error) : "再設定用のメールを送りました。メールのリンクを開いてください。");
+      });
+      return;
+    }
+    if (pw.length < 8) { authMessage("パスワードは8文字以上にしてください。"); return; }
+    busy(true);
+    if (authMode === "signup") {
+      sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: location.origin + location.pathname } }).then(function (res) {
+        busy(false);
+        if (res.error) { authMessage(jaError(res.error)); return; }
+        if (!res.data.session) authMessage("確認メールを送りました。メールのリンクを開くと、登録が完了します。");
+      });
+    } else {
+      sb.auth.signInWithPassword({ email: email, password: pw }).then(function (res) {
+        busy(false);
+        if (res.error) authMessage(jaError(res.error));
+      });
+    }
+  }
+
+  document.getElementById("authBody").addEventListener("click", function (e) {
+    var am = e.target.closest("[data-am]");
+    if (am) { authMode = am.getAttribute("data-am"); renderAuth("", (document.getElementById("em") || {}).value || ""); return; }
+    if (e.target.closest("#authGo")) submitAuth();
+  });
+  document.getElementById("authBody").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); submitAuth(); }
+  });
+
+  function enterApp(u) {
+    user = u;
+    document.getElementById("authBody").innerHTML = '<p class="muted" style="margin:0">データを読み込み中…</p>';
+    sb.from("user_state").select("data,updated_at").eq("user_id", u.id).maybeSingle().then(function (res) {
+      if (res.error) {
+        document.getElementById("authBody").innerHTML =
+          '<p style="margin:0 0 10px">データを読み込めませんでした。通信を確認して、もう一度お試しください。<br><span class="muted">（保存済みのデータを上書きしないように、ここで止めています）</span></p>' +
+          '<button class="primary" id="retryLoad">もう一度読み込む</button>';
+        var rb = document.getElementById("retryLoad");
+        rb.addEventListener("click", function () { enterApp(u); });
+        return;
+      }
+      var created = false;
+      if (res.data && validState(res.data.data)) {
+        state = normalize(res.data.data);
+        lastSynced = Date.parse(res.data.updated_at) || 0;
+        cacheLocal();
+      } else {
+        var cached = null;
+        try { cached = JSON.parse(localStorage.getItem("wiwb:" + u.id)); } catch (e) {}
+        state = validState(cached) ? normalize(cached) : blank();
+        created = true;
+      }
+      activeId = null; ensureActive();
+      tab = "week"; weekOffset = 0; monthOffset = 0; ioMode = "";
+      if (!recovery) document.getElementById("auth").hidden = true;
+      document.getElementById("app").hidden = false;
+      setStatus("");
+      renderView();
+      if (created) { dirty = true; flush(); }
+    });
+  }
+
+  function leaveApp() {
+    clearTimeout(saveTimer);
+    user = null; state = null; dirty = false; saving = false; lastSynced = 0;
+    document.getElementById("app").hidden = true;
+    document.getElementById("rescue").hidden = true;
+    authMode = "signin";
+    showAuth();
+  }
+
+  function signOutSafely() {
+    if (!user) return;
+    setStatus("保存中…");
+    var tries = 0;
+    (function wait() {
+      if ((dirty || saving) && tries < 25) { tries++; if (dirty && !saving) flush(); setTimeout(wait, 200); return; }
+      sb.auth.signOut();
+    })();
+  }
+
+  function bootAuth() {
+    if (!sb) { showAuth(); return; }
+    sb.auth.onAuthStateChange(function (event, session) {
+      /* do other supabase calls outside this callback */
+      setTimeout(function () {
+        if (event === "PASSWORD_RECOVERY") { recovery = true; if (session) user = session.user; showAuth(); return; }
+        if (event === "SIGNED_OUT") { recovery = false; leaveApp(); return; }
+        if (event === "INITIAL_SESSION") {
+          booted = true;
+          if (session) { if (!user || user.id !== session.user.id || !state) enterApp(session.user); }
+          else showAuth();
+          return;
+        }
+        if (event === "SIGNED_IN" && session) {
+          if (!user || user.id !== session.user.id || !state) enterApp(session.user);
+        }
+      }, 0);
+    });
+  }
+
+  /* ---------- helpers ---------- */
+  function orderedGoals() {
+    return state.goals.slice().sort(function (a, b) { return (a.role === "main" ? 0 : 1) - (b.role === "main" ? 0 : 1); });
+  }
+  function ensureActive() {
+    if (!state.goals.some(function (g) { return g.id === activeId; })) activeId = orderedGoals()[0].id;
+  }
+  function ag() {
+    var f = state.goals.filter(function (g) { return g.id === activeId; })[0];
+    return f || orderedGoals()[0];
+  }
+  function gname(g) { return g.name || (g.role === "main" ? "メイン目標" : "サブ目標"); }
+  function planned(g) { return !!(g.end && g.milestones.length); }
+  function canAddGoal() { return state.goals.length < 1 + state.maxSubs; }
+  function roleTag(g) { return '<span class="role' + (g.role === "main" ? "" : " sub") + '">' + (g.role === "main" ? "メイン" : "サブ") + "</span>"; }
+  function wgText(g, key) { var v = g.weekGoals[key]; return typeof v === "string" ? v : ""; }
+  function wtList(g, key) { return g.weekTodos[key] || []; }
+
+  /* ---------- date helpers ---------- */
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function dstr(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function parse(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function addDays(d, n) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() + n); return x; }
+  function diffDays(a, b) { return Math.round((parse(b) - parse(a)) / 86400000); }
+  function today() { return dstr(new Date()); }
+  function md(s) { var d = parse(s); return (d.getMonth() + 1) + "/" + d.getDate(); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function monthsOf(k) { for (var i = 0; i < PERIODS.length; i++) { if (PERIODS[i].k === k) return PERIODS[i].m; } return 0; }
+  function addMonths(d, n) {
+    var y = d.getFullYear(), m = d.getMonth() + n, day = d.getDate();
+    var last = new Date(y, m + 1, 0).getDate();
+    return new Date(y, m, Math.min(day, last));
+  }
+  function weekStart(offset) {
+    var now = new Date();
+    return addDays(now, -now.getDay() + offset * 7);
+  }
+
+  /* ---------- plan logic ---------- */
+  function sortedMs(g) { return g.milestones.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }); }
+  function msFor(g, ds) {
+    if (!g.end || ds < g.start) return null;
+    var ms = sortedMs(g);
+    for (var i = 0; i < ms.length; i++) { if (ds <= ms[i].date) return ms[i]; }
+    return null;
+  }
+  /* The 10 actions belong to the earliest milestone; they appear in every week up to that date. */
+  function weekTasks(g, wsStr) {
+    if (!planned(g)) return [];
+    var first = sortedMs(g)[0];
+    if (!first) return [];
+    var weStr = dstr(addDays(parse(wsStr), 6));
+    if (wsStr > first.date || weStr < g.start) return [];
+    return g.tasks.filter(function (t) { return t.mid === first.id; })
+      .sort(function (a, b) { return (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || (b.impact || 0) - (a.impact || 0); });
+  }
+  function isDone(key, id) { return !!(state.done[key] && state.done[key][id] !== undefined); }
+
+  function toggle(key, id) {
+    if (key > dstr(weekStart(0))) return;
+    if (isDone(key, id)) {
+      delete state.done[key][id];
+      if (!Object.keys(state.done[key]).length) delete state.done[key];
+    } else {
+      state.done[key] = state.done[key] || {};
+      state.done[key][id] = 1;
+    }
+    save();
+    renderView();
+  }
+
+  /* ---------- render ---------- */
+  function renderTabs() {
+    Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (b) {
+      b.setAttribute("aria-selected", b.getAttribute("data-tab") === tab ? "true" : "false");
+    });
+  }
+
+  function taskRow(key, t) {
+    var on = isDone(key, t.id);
+    var future = key > dstr(weekStart(0));
+    return '<button class="t' + (on ? " on" : "") + '" data-act="toggle" data-date="' + key + '" data-tid="' + t.id + '"' + (future ? " disabled" : "") + '>' +
+      '<span class="box">' + (on ? "✓" : "") + '</span><span class="nm">' + (t.pin ? "📌 " : "") + esc(t.name) +
+      (t.impact ? ' <span class="gtag">影響' + t.impact + "</span>" : "") + "</span></button>";
+  }
+
+  function switcher() {
+    var h = '<div class="chips switch">';
+    orderedGoals().forEach(function (g) {
+      h += '<button class="chip" data-act="selgoal" data-gid="' + g.id + '" aria-pressed="' + (g.id === ag().id) + '">' + (g.role === "main" ? "★ " : "") + esc(gname(g)) + "</button>";
+    });
+    if (canAddGoal()) h += '<button class="chip" data-act="addgoal">＋ 目標を追加</button>';
+    return h + "</div>";
+  }
+
+  function viewWeek() {
+    var ws = weekStart(weekOffset), wsStr = dstr(ws);
+    var we = addDays(ws, 6), weStr = dstr(we);
+    var h = '<div class="wk-nav"><button data-act="wkprev" aria-label="前の週">‹</button><b>' + md(wsStr) + "(日) 〜 " + md(weStr) +
+      '(土)</b><button data-act="wknext" aria-label="次の週">›</button></div>';
+    if (weekOffset !== 0) h += '<div class="centered"><button class="ghost" data-act="wknow">今週に戻る</button></div>';
+    var gs = orderedGoals().filter(planned);
+    if (!gs.length) {
+      return h + '<div class="card empty"><p>まだ計画がありません。<br>「計画」で、なりたい自分と期限を決めましょう。</p><button class="primary" data-act="goplan">計画をつくる</button></div>';
+    }
+    var ref = weekOffset === 0 ? today() : wsStr;
+    gs.forEach(function (g) {
+      var m = msFor(g, ref);
+      var left = diffDays(today(), g.end);
+      h += '<div class="card">' + roleTag(g) + '<span class="goal-name" style="font-size:18px">' + esc(gname(g)) + "</span>";
+      h += '<p class="muted" style="margin:6px 0 0">' + (left >= 0 ? "期限（" + md(g.end) + "）まで あと " + left + " 日" : "期限を過ぎています") + "</p>";
+      if (m) h += '<p class="muted" style="margin:0">いまの中間目標：<b>' + esc(m.title) + "</b>（" + md(m.date) + "まで）</p>";
+      var wg = wgText(g, wsStr);
+      if (wg) h += '<p class="muted" style="margin:8px 0 0">この週の目標：<b>' + esc(wg) + "</b></p>";
+      g.milestones.filter(function (x) { return x.date >= wsStr && x.date <= weStr; }).forEach(function (x) {
+        h += '<p class="ms-mark" style="margin:6px 0 0">◎ ' + esc(x.title) + "の日（" + md(x.date) + "）</p>";
+      });
+      if (m && m.memo) h += '<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">中間目標のメモを見る</summary><p style="margin:6px 0 0;white-space:pre-wrap">' + esc(m.memo) + "</p></details>";
+      if (g.memo) h += '<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">メモを見る</summary><p style="margin:6px 0 0;white-space:pre-wrap">' + esc(g.memo) + "</p></details>";
+      h += "</div>";
+      var todos = wtList(g, wsStr);
+      var futureWk = wsStr > dstr(weekStart(0));
+      h += '<h2 style="margin-top:4px">' + (wg ? "目標のためにやること" : "この週にやること") + (todos.length ? "（" + todos.filter(function (x) { return x.done; }).length + " / " + todos.length + "）" : "") + "</h2>";
+      todos.forEach(function (x) {
+        h += '<button class="t' + (x.done ? " on" : "") + '" data-act="wttoggle" data-gid="' + g.id + '" data-wk="' + wsStr + '" data-wtid="' + x.id + '"' + (futureWk ? " disabled" : "") + '><span class="box">' + (x.done ? "✓" : "") + '</span><span class="nm">' + esc(x.name) + "</span></button>";
+      });
+      h += '<div class="wg" style="margin-bottom:8px"><input type="text" data-wta="' + wsStr + '" data-gid="' + g.id + '" maxlength="60" placeholder="やることを追加（例：ランニングシューズを買う）" aria-label="この週にやることを追加"></div>';
+      var ts = weekTasks(g, wsStr);
+      var doneN = ts.filter(function (t) { return isDone(wsStr, t.id); }).length;
+      h += '<h2 style="margin-top:4px">この週の行動' + (ts.length ? "（" + doneN + " / " + ts.length + "）" : "") + "</h2>";
+      if (!ts.length) {
+        var first = sortedMs(g)[0];
+        h += '<div class="card empty">' + (first && wsStr > first.date ? "最初の区切りの期間は終わりました。" : "この週の行動はありません。<br>「計画」で、行動を追加できます。") + "</div>";
+      } else ts.forEach(function (t) { h += taskRow(wsStr, t); });
+    });
+    return h;
+  }
+
+  function viewMonth() {
+    var g = ag();
+    var now = new Date();
+    var base = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+    var y = base.getFullYear(), mo = base.getMonth();
+    var last = new Date(y, mo + 1, 0);
+    var h = switcher();
+    h += '<div class="wk-nav"><button data-act="mprev" aria-label="前の月">‹</button><b>' + y + "年" + (mo + 1) + '月</b><button data-act="mnext" aria-label="次の月">›</button></div>';
+    if (monthOffset !== 0) h += '<div class="centered"><button class="ghost" data-act="mnow">今月に戻る</button></div>';
+    h += '<p class="muted" style="margin:0 0 12px">「' + esc(gname(g)) + "」の、日曜〜土曜の1週間ごとの目標と、そのためにやることです。</p>";
+    var ws = addDays(base, -base.getDay());
+    var thisWs = dstr(weekStart(0));
+    var n = 1;
+    while (ws <= last) {
+      var wsStr = dstr(ws), we = addDays(ws, 6);
+      var ts = weekTasks(g, wsStr);
+      var doneN = ts.filter(function (t) { return isDone(wsStr, t.id); }).length;
+      var cur = wsStr === thisWs;
+      var todos = wtList(g, wsStr);
+      h += '<div class="card" style="' + (cur ? "border-color:var(--accent);background:var(--today);" : "") + '"><b>第' + n + '週</b> <span class="muted">' + md(wsStr) + "(日)〜" + md(dstr(we)) + "(土)</span>" + (cur ? ' <span class="now">今週</span>' : "");
+      h += '<div class="wg"><input type="text" data-wg="' + wsStr + '" maxlength="60" value="' + esc(wgText(g, wsStr)) + '" placeholder="この週の目標（例：朝ランを5回）" aria-label="この週の目標"></div>';
+      h += '<p class="muted" style="margin:10px 0 0">目標のためにやること</p>';
+      todos.forEach(function (x) {
+        h += '<div class="wg"><span class="nm" style="font-weight:400">' + (x.done ? "✓ " : "・") + esc(x.name) + '</span><button class="del" data-act="delwt" data-gid="' + g.id + '" data-wk="' + wsStr + '" data-wtid="' + x.id + '" aria-label="削除">×</button></div>';
+      });
+      h += '<div class="wg"><input type="text" data-wta="' + wsStr + '" data-gid="' + g.id + '" maxlength="60" placeholder="やることを追加" aria-label="やることを追加"></div>';
+      if (ts.length) h += '<div class="bar" style="margin-top:10px;height:10px"><div class="bar-fill" style="width:' + Math.round(doneN / ts.length * 100) + '%"></div></div><p class="muted" style="margin:4px 0 0">行動 ' + doneN + " / " + ts.length + " 完了</p>";
+      h += "</div>";
+      ws = addDays(ws, 7); n++;
+    }
+    return h;
+  }
+
+  function rescueHtml() {
+    var count = 0;
+    Object.keys(state.done).forEach(function (d) { count += Object.keys(state.done[d]).length; });
+    state.goals.forEach(function (g) {
+      Object.keys(g.weekTodos).forEach(function (k) { g.weekTodos[k].forEach(function (x) { if (x.done) count++; }); });
+    });
+    var h = '<div><h2 style="margin-top:0">それでも、やりたい理由</h2>';
+    var any = false;
+    orderedGoals().forEach(function (g) {
+      if (!g.name && !g.why && !g.note) return;
+      any = true;
+      h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<b style="font-size:18px">' + esc(gname(g)) + "</b></p>";
+      h += '<p class="muted" style="margin:10px 0 2px">どうしても叶えたい理由</p><p style="margin:0;white-space:pre-wrap">' + (g.why ? esc(g.why) : '<span class="muted">まだ書かれていません。「計画」で書いておくと、ここで見返せます。</span>') + "</p>";
+      if (g.note) h += '<p class="muted" style="margin:10px 0 2px">やめたくなったときの自分へ</p><p style="margin:0;white-space:pre-wrap">' + esc(g.note) + "</p>";
+      h += "</div>";
+    });
+    if (!any) h += '<div class="card"><p class="muted" style="margin:0">まだ書かれていません。「計画」で、なりたい自分と理由を書いておくと、ここで見返せます。</p></div>';
+    h += '<div class="card"><p class="muted" style="margin:0 0 4px">ここまでの積み重ね</p><p style="margin:0"><b>' + count + "回</b>の行動</p></div>";
+    var rest = null, wsStr = dstr(weekStart(0));
+    orderedGoals().some(function (g) {
+      var td = wtList(g, wsStr).filter(function (x) { return !x.done; });
+      if (td.length) { rest = td[0]; return true; }
+      var r = weekTasks(g, wsStr).filter(function (t) { return !isDone(wsStr, t.id); });
+      if (r.length) { rest = r[0]; return true; }
+      return false;
+    });
+    if (rest) h += '<div class="card"><p class="muted" style="margin:0 0 4px">今週はまず、これだけ</p><p style="margin:0"><b>' + (rest.pin ? "📌 " : "") + esc(rest.name) + "</b></p></div>";
+    h += '<button class="primary" id="rescueClose">もう一度、やってみる</button></div>';
+    return h;
+  }
+
+  function impactOptions(v) {
+    var o = "";
+    for (var i = 1; i <= 10; i++) o += '<option value="' + i + '"' + (v === i ? " selected" : "") + ">" + i + "</option>";
+    return o;
+  }
+  function impactLine(t) {
+    var v = t.impact || 0;
+    return '<div class="imp"><span>影響度</span><div class="ibar"><i style="width:' + v * 10 + '%"></i></div><select data-tf="impact" aria-label="目標達成への影響度（10段階）"><option value="0"' + (v ? "" : " selected") + ">未設定</option>" + impactOptions(v) + "</select></div>";
+  }
+
+  function accountHtml() {
+    var h = '<h2>アカウントとデータ</h2><div class="card">';
+    h += '<p class="muted" style="margin:0 0 8px">ログイン中：' + esc(user && user.email ? user.email : "") + "</p>";
+    h += '<div style="display:flex;flex-wrap:wrap;gap:8px 14px">' +
+      '<button class="ghost" data-act="logout">ログアウト</button>' +
+      '<button class="ghost" data-act="io-export">データを書き出す</button>' +
+      '<button class="ghost" data-act="io-import">データを読み込む</button>' +
+      '<button class="ghost danger" data-act="reset">計画と記録をすべて消す</button>' +
+      '<button class="ghost danger" data-act="delacct">アカウントを削除</button></div>';
+    if (ioMode === "export") {
+      h += '<label class="l">下の文字をすべてコピーして、保管してください</label><textarea readonly rows="8" id="ioText">' + esc(JSON.stringify(state)) + '</textarea><button class="ghost" data-act="io-close">閉じる</button>';
+    }
+    if (ioMode === "import") {
+      h += '<label class="l">書き出したデータを貼り付けてください（いまのデータは置き換わります）</label><textarea rows="8" id="ioIn" placeholder="ここに貼り付け"></textarea>' +
+        '<button class="primary" data-act="doimport">このデータで置き換える</button><button class="ghost" data-act="io-close">キャンセル</button>';
+    }
+    return h + "</div>";
+  }
+
+  function viewPlan() {
+    var g = ag();
+    var h = switcher();
+    h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<span class="muted">' + (g.role === "main" ? "いちばん力を入れる目標" : "小さく続ける目標") + "</span></p>";
+    h += '<div style="display:flex;gap:12px;margin-top:6px">';
+    if (g.role !== "main") h += '<button class="ghost" data-act="makemain">この目標をメインにする</button>';
+    if (state.goals.length > 1) h += '<button class="ghost" data-act="delgoal">この目標を削除</button>';
+    h += "</div></div>";
+
+    h += '<div class="card"><label class="l">なりたい自分</label>' +
+      '<input type="text" data-gf="name" maxlength="40" value="' + esc(g.name) + '" placeholder="例：毎朝ランニングする自分">' +
+      '<label class="l">どうしても叶えたい理由（あとで見返す）</label><textarea data-gf="why" rows="3" maxlength="500" placeholder="どうしても叶えたい、本当の理由">' + esc(g.why || "") + "</textarea>" +
+      '<label class="l">やめたくなったときの自分へ</label><textarea data-gf="note" rows="3" maxlength="500" placeholder="立ち上がるための一言">' + esc(g.note || "") + "</textarea>" +
+      '<label class="l">メモ（内訳・考えたこと）</label><textarea data-gf="memo" rows="6" maxlength="2000" placeholder="例：月収100万円の内訳&#10;・誰から：&#10;・どんなサービスで：&#10;・いくら × 何件：">' + esc(g.memo || "") + "</textarea>" +
+      '<label class="l">開始日</label><input type="date" data-gf="start" value="' + esc(g.start) + '"></div>';
+
+    h += '<h2>いつまでに、なりたい？</h2><div class="card"><div class="chips" id="periodChips">';
+    PERIODS.forEach(function (p) { h += '<button class="chip" style="min-width:76px" data-act="period" data-k="' + p.k + '" aria-pressed="' + (g.period === p.k) + '">' + p.label + "</button>"; });
+    h += '<button class="chip" style="min-width:76px" data-act="period" data-k="over" aria-pressed="' + (g.period === "over") + '">それ以降</button></div>';
+    if (g.period === "over") h += '<label class="l">期限の日付（10年後より先）</label><input type="date" data-gf="end" value="' + esc(g.end) + '">';
+    else if (g.period && g.end) h += '<p class="muted" style="margin:10px 0 0">期限：' + g.end.replace(/-/g, "/") + "</p>";
+    h += '<p class="muted" style="margin:10px 0 0">選んだ期限より手前の区切り（1ヶ月後〜）が、中間目標になります。</p>';
+    h += '<button class="primary" data-act="gen">逆算して中間目標をつくる</button></div>';
+
+    var ms = sortedMs(g);
+    if (ms.length) h += "<h2>中間目標とやること</h2>";
+    ms.forEach(function (m) {
+      h += '<div class="card" data-mid="' + m.id + '"><div class="ms-head"><input type="text" data-mf="title" maxlength="40" value="' + esc(m.title) + '" aria-label="中間目標の名前">' +
+        '<button class="del" data-act="delms" aria-label="この中間目標を削除">×</button></div>' +
+        '<input type="date" data-mf="date" value="' + esc(m.date) + '" aria-label="達成する日">' +
+        '<textarea data-mf="memo" rows="3" maxlength="1000" style="margin-top:8px" placeholder="この中間目標のメモ（例：内訳、必要なこと）" aria-label="この中間目標のメモ">' + esc(m.memo || "") + "</textarea>";
+      if (m.id !== ms[0].id) { h += "</div>"; return; }
+      var ts = g.tasks.filter(function (t) { return t.mid === m.id; }).sort(function (a, b) { return (b.impact || 0) - (a.impact || 0); });
+      h += '<div style="margin-top:14px"><b>1ヶ月目の目標を100%達成する行動（' + ts.length + ' / 10）</b><p class="muted" style="margin:4px 0 8px">📌センターピン＝倒せば他も連鎖して倒れやすい、一番大事な行動。いくつでも選べます（複数OK）。影響度（1〜10）は、その行動が目標達成にどれだけ効くか。高い順に並びます。</p>';
+      ts.forEach(function (t) {
+        h += '<div class="tr" data-tid="' + t.id + '"><button class="del" style="width:36px;height:36px;font-size:18px;' + (t.pin ? "" : "opacity:.3;") + '" data-act="pin" aria-label="センターピンにする" aria-pressed="' + !!t.pin + '">📌</button><span class="nm">' + esc(t.name) + '</span><button class="del" data-act="deltask" aria-label="削除">×</button>' + impactLine(t) + "</div>";
+      });
+      h += "</div>";
+      if (ts.length >= 10) { h += '<p class="muted" style="margin-top:10px">10個そろいました。</p></div>'; return; }
+      h += '<div class="add-t"><input type="text" class="newname" maxlength="30" placeholder="行動を追加（例：5分走る）" aria-label="行動の名前"><div class="imp" style="padding:0"><span>影響度（1〜10）</span><select class="newimpact" aria-label="影響度">' + impactOptions(5) + '</select></div>';
+      h += '<button class="primary" style="margin-top:0" data-act="addtask">追加</button></div></div>';
+    });
+    h += accountHtml();
+    return h;
+  }
+
+  function renderView() {
+    renderTabs();
+    var v = document.getElementById("view");
+    v.innerHTML = tab === "week" ? viewWeek() : tab === "month" ? viewMonth() : viewPlan();
+  }
+
+  /* ---------- events ---------- */
+  document.querySelector(".tabs").addEventListener("click", function (e) {
+    var b = e.target.closest(".tab"); if (!b) return;
+    tab = b.getAttribute("data-tab"); renderView();
+  });
+
+  var view = document.getElementById("view");
+
+  view.addEventListener("click", function (e) {
+    var el = e.target.closest("[data-act]"); if (!el) return;
+    var act = el.getAttribute("data-act");
+    var g = ag();
+
+    if (act === "toggle") { toggle(el.getAttribute("data-date"), +el.getAttribute("data-tid")); return; }
+    if (act === "goplan") { tab = "plan"; renderView(); return; }
+    if (act === "wkprev") { weekOffset--; renderView(); return; }
+    if (act === "wknext") { weekOffset++; renderView(); return; }
+    if (act === "wknow") { weekOffset = 0; renderView(); return; }
+    if (act === "mprev") { monthOffset--; renderView(); return; }
+    if (act === "mnext") { monthOffset++; renderView(); return; }
+    if (act === "mnow") { monthOffset = 0; renderView(); return; }
+
+    if (act === "delwt" || act === "wttoggle") {
+      var tg = state.goals.filter(function (x) { return x.id === +el.getAttribute("data-gid"); })[0] || g;
+      var key = el.getAttribute("data-wk");
+      var wid = +el.getAttribute("data-wtid");
+      if (act === "delwt") {
+        tg.weekTodos[key] = wtList(tg, key).filter(function (x) { return x.id !== wid; });
+      } else {
+        if (key > dstr(weekStart(0))) return;
+        wtList(tg, key).forEach(function (x) { if (x.id === wid) x.done = !x.done; });
+      }
+      save(); renderView(); return;
+    }
+
+    if (act === "selgoal") { activeId = +el.getAttribute("data-gid"); renderView(); return; }
+    if (act === "addgoal") {
+      if (!canAddGoal()) return;
+      var ng = mkGoal(state.nextId++, "sub");
+      state.goals.push(ng); activeId = ng.id; tab = "plan";
+      save(); renderView(); return;
+    }
+    if (act === "makemain") {
+      state.goals.forEach(function (x) { x.role = x.id === g.id ? "main" : "sub"; });
+      save(); renderView(); return;
+    }
+    if (act === "delgoal") {
+      if (state.goals.length < 2) return;
+      if (!confirm("「" + gname(g) + "」を削除します。よろしいですか？")) return;
+      state.goals = state.goals.filter(function (x) { return x.id !== g.id; });
+      if (!state.goals.some(function (x) { return x.role === "main"; })) state.goals[0].role = "main";
+      activeId = orderedGoals()[0].id;
+      save(); renderView(); return;
+    }
+
+    if (act === "period") {
+      var k = el.getAttribute("data-k");
+      g.period = k;
+      if (k === "over") g.end = "";
+      else g.end = dstr(addMonths(parse(g.start), monthsOf(k)));
+      save(); renderView(); return;
+    }
+    if (act === "gen") {
+      if (!g.period) { alert("期限を選んでください。"); return; }
+      if (!g.start) { alert("開始日を入れてください。"); return; }
+      if (g.period !== "over") g.end = dstr(addMonths(parse(g.start), monthsOf(g.period)));
+      var limit = dstr(addMonths(parse(g.start), 120));
+      if (g.period === "over" && (!g.end || g.end <= limit)) { alert("「それ以降」は、10年後より先の日付を入れてください。"); return; }
+      if (g.milestones.length && !confirm("いまの中間目標と行動を消して、つくり直します。よろしいですか？")) return;
+      g.milestones = []; g.tasks = [];
+      var selM = g.period === "over" ? 1e9 : monthsOf(g.period);
+      PERIODS.forEach(function (p) {
+        if (p.m < selM) g.milestones.push({ id: state.nextId++, title: p.label + "の目標", date: dstr(addMonths(parse(g.start), p.m)) });
+      });
+      g.milestones.push({ id: state.nextId++, title: g.name || "ゴール", date: g.end });
+      save(); renderView(); return;
+    }
+    if (act === "delms") {
+      var mid = +el.closest("[data-mid]").getAttribute("data-mid");
+      if (!confirm("この中間目標と、その行動を削除します。よろしいですか？")) return;
+      g.milestones = g.milestones.filter(function (m) { return m.id !== mid; });
+      g.tasks = g.tasks.filter(function (t) { return t.mid !== mid; });
+      save(); renderView(); return;
+    }
+    if (act === "addtask") {
+      var card = el.closest("[data-mid]");
+      var input = card.querySelector(".newname");
+      var name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      var cm = +card.getAttribute("data-mid");
+      if (g.tasks.filter(function (t) { return t.mid === cm; }).length >= 10) return;
+      g.tasks.push({ id: state.nextId++, mid: cm, name: name, impact: +card.querySelector(".newimpact").value });
+      save(); renderView(); return;
+    }
+    if (act === "pin") {
+      var ptid = +el.closest("[data-tid]").getAttribute("data-tid");
+      var target = g.tasks.filter(function (t) { return t.id === ptid; })[0];
+      if (target) { target.pin = !target.pin; save(); renderView(); }
+      return;
+    }
+    if (act === "deltask") {
+      var tid = +el.closest("[data-tid]").getAttribute("data-tid");
+      g.tasks = g.tasks.filter(function (t) { return t.id !== tid; });
+      save(); renderView(); return;
+    }
+
+    if (act === "logout") { signOutSafely(); return; }
+    if (act === "io-export") { ioMode = "export"; renderView(); var ta = document.getElementById("ioText"); if (ta) { ta.focus(); ta.select(); } return; }
+    if (act === "io-import") { ioMode = "import"; renderView(); return; }
+    if (act === "io-close") { ioMode = ""; renderView(); return; }
+    if (act === "doimport") {
+      var raw = (document.getElementById("ioIn") || {}).value || "";
+      var parsed = null;
+      try { parsed = JSON.parse(raw); } catch (err) {}
+      if (!validState(parsed)) { alert("読み込めませんでした。「データを書き出す」でコピーした文字を、そのまま貼り付けてください。"); return; }
+      if (!confirm("いまのデータは、貼り付けたデータで置き換わります。よろしいですか？")) return;
+      state = normalize(parsed); ioMode = ""; activeId = null; ensureActive();
+      save(); renderView(); return;
+    }
+    if (act === "reset") {
+      if (confirm("すべての目標・計画・記録が消えます。よろしいですか？")) {
+        state = blank(); activeId = state.goals[0].id; ioMode = ""; save(); renderView();
+      }
+      return;
+    }
+    if (act === "delacct") {
+      if (!confirm("アカウントと、保存されたすべてのデータが完全に消えます。元に戻せません。本当に削除しますか？")) return;
+      clearTimeout(saveTimer); dirty = false;
+      sb.rpc("delete_my_account").then(function (res) {
+        if (res.error) { alert("削除できませんでした。時間をおいて、もう一度お試しください。"); return; }
+        try { localStorage.removeItem(cacheKey()); } catch (err) {}
+        sb.auth.signOut();
+      });
+    }
+  });
+
+  view.addEventListener("change", function (e) {
+    var t = e.target;
+    var g = ag();
+    var wg2 = t.getAttribute("data-wg");
+    if (wg2) { g.weekGoals[wg2] = t.value.trim(); save(); renderView(); return; }
+    var wta = t.getAttribute("data-wta");
+    if (wta) {
+      var val = t.value.trim();
+      var tg2 = state.goals.filter(function (x) { return x.id === +t.getAttribute("data-gid"); })[0] || g;
+      if (val) { tg2.weekTodos[wta] = wtList(tg2, wta).concat([{ id: state.nextId++, name: val, done: false }]); save(); }
+      renderView(); return;
+    }
+    var tf = t.getAttribute("data-tf");
+    if (tf) {
+      var tid2 = +t.closest("[data-tid]").getAttribute("data-tid");
+      g.tasks.forEach(function (x) { if (x.id === tid2) x.impact = +t.value; });
+      save(); renderView(); return;
+    }
+    var gf = t.getAttribute("data-gf");
+    if (gf) {
+      g[gf] = t.value;
+      if (gf === "start" && g.period && g.period !== "over" && t.value) {
+        g.end = dstr(addMonths(parse(t.value), monthsOf(g.period)));
+        save(); renderView(); return;
+      }
+      if (gf === "name") { save(); renderView(); return; }
+      save(); return;
+    }
+    var mf = t.getAttribute("data-mf");
+    if (mf) {
+      var mid = +t.closest("[data-mid]").getAttribute("data-mid");
+      g.milestones.forEach(function (m) { if (m.id === mid) m[mf] = t.value; });
+      save();
+      if (mf === "date") renderView();
+    }
+  });
+
+  var rescue = document.getElementById("rescue");
+  document.getElementById("whyBtn").addEventListener("click", function () {
+    if (!state) return;
+    rescue.innerHTML = rescueHtml(); rescue.hidden = false; rescue.scrollTop = 0;
+  });
+  rescue.addEventListener("click", function (e) { if (e.target.id === "rescueClose") rescue.hidden = true; });
+
+  bootAuth();
+})();
+</script>
+</body>
+</html>
