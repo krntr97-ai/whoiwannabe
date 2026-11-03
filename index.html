@@ -116,6 +116,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     <h1 style="font-size:24px;margin:24px 0 4px">なりたい自分メーター</h1>
     <p class="muted" style="margin:0 0 18px">期限から逆算して、毎週の行動に落とし込む。</p>
     <div class="card" id="authBody"><p class="muted" style="margin:0">読み込み中…</p></div>
+    <p class="muted centered"><a href="terms.html">利用規約</a>・<a href="privacy.html">プライバシーポリシー</a></p>
   </div>
 </div>
 
@@ -265,6 +266,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       var up = authMode === "signup";
       h += '<b>' + (up ? "新規登録" : "ログイン") + '</b><label class="l" for="em">メールアドレス</label><input id="em" type="email" autocomplete="email" value="' + esc(prevEmail) + '">' +
         '<label class="l" for="pw">パスワード（8文字以上）</label><input id="pw" type="password" autocomplete="' + (up ? "new-password" : "current-password") + '">' +
+        (up ? '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px"><input type="checkbox" id="agree" style="margin-top:5px"><span><a href="terms.html" target="_blank" rel="noopener">利用規約</a>と<a href="privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>に同意する</span></label>' : "") +
         '<p id="authMsg" class="muted" role="alert" style="margin:10px 0 0"></p><button class="primary" id="authGo">' + (up ? "登録する" : "ログインする") + '</button>' +
         '<div class="centered">' + (up ? '<button class="ghost" data-am="signin">アカウントをお持ちの方はログイン</button>' : '<button class="ghost" data-am="signup">はじめての方は新規登録</button>') +
         (up ? "" : '<button class="ghost" data-am="forgot">パスワードを忘れた</button>') + "</div>";
@@ -302,6 +304,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       return;
     }
     if (pw.length < 8) { authMessage("パスワードは8文字以上にしてください。"); return; }
+    if (authMode === "signup" && !(document.getElementById("agree") || {}).checked) { authMessage("利用規約とプライバシーポリシーへの同意が必要です。"); return; }
     busy(true);
     if (authMode === "signup") {
       sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: location.origin + location.pathname } }).then(function (res) {
@@ -618,7 +621,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       '<button class="ghost" data-act="io-export">データを書き出す</button>' +
       '<button class="ghost" data-act="io-import">データを読み込む</button>' +
       '<button class="ghost danger" data-act="reset">計画と記録をすべて消す</button>' +
-      '<button class="ghost danger" data-act="delacct">アカウントを削除</button></div>';
+      '<button class="ghost danger" data-act="delacct">アカウントを削除</button></div>' +
+      '<p class="muted" style="margin:10px 0 0"><a href="terms.html" target="_blank" rel="noopener">利用規約</a>・<a href="privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a></p>';
     if (ioMode === "export") {
       h += '<label class="l">下の文字をすべてコピーして、保管してください</label><textarea readonly rows="8" id="ioText">' + esc(JSON.stringify(state)) + '</textarea><button class="ghost" data-act="io-close">閉じる</button>';
     }
