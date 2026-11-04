@@ -515,12 +515,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var ref = weekOffset === 0 ? today() : wsStr;
     gs.forEach(function (g) {
       var m = msFor(g, ref);
-      var left = diffDays(today(), g.end);
-      h += '<div class="card">' + roleTag(g) + '<span class="goal-name" style="font-size:18px">' + esc(gname(g)) + "</span>";
-      h += '<p class="muted" style="margin:6px 0 0">' + (left >= 0 ? "期限（" + md(g.end) + "）まで あと " + left + " 日" : "期限を過ぎています") + "</p>";
-      if (m) h += '<p class="muted" style="margin:0">いまの中間目標：<b>' + esc(m.title) + "</b>（" + md(m.date) + "まで）</p>";
       var wg = wgText(g, wsStr);
-      if (wg) h += '<p class="muted" style="margin:8px 0 0">この週の目標：<b>' + esc(wg) + "</b></p>";
+      h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<span class="muted">' + esc(gname(g)) + "</span></p>";
+      h += '<p class="muted" style="margin:10px 0 0">この週の目標</p>';
+      h += wg ? '<p class="goal-name" style="margin:0;font-size:24px">' + esc(wg) + "</p>" : '<p class="muted" style="margin:0">まだ決まっていません（「今月」で決められます）</p>';
+      if (m) h += '<p class="muted" style="margin:10px 0 0">いまの中間目標：<b>' + esc(m.title) + "</b>（" + md(m.date) + "まで）</p>";
       g.milestones.filter(function (x) { return x.date >= wsStr && x.date <= weStr; }).forEach(function (x) {
         h += '<p class="ms-mark" style="margin:6px 0 0">◎ ' + esc(x.title) + "の日（" + md(x.date) + "）</p>";
       });
