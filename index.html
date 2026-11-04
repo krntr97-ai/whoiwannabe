@@ -96,6 +96,10 @@ input[type="text"], input[type="date"], input[type="email"], input[type="passwor
 #wizard { z-index: 25; }
 .wiz-ex { background: var(--bg); border-left: 3px solid var(--accent); padding: 6px 12px; font-size: 13px; color: var(--muted); border-radius: 6px; margin: 6px 0 12px; }
 .avail { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.av-wrap { display: flex; gap: 8px; align-items: stretch; }
+.av-wrap .avail { flex: 1; min-width: 0; }
+.av-vnav { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; }
+.av-vnav button { flex: 1; width: 34px; min-height: 38px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; cursor: pointer; font-size: 12px; }
 .av-day { text-align: center; }
 .av-day svg { width: 100%; max-width: 46px; height: auto; display: block; margin: 0 auto; overflow: visible; }
 .av-h { stroke: var(--muted); stroke-width: 1.5; }
@@ -166,6 +170,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   var tab = "week";
   var weekOffset = 0;
   var monthOffset = 0;
+  var homeMonthOff = 0; /* months away from the current month, for the home screen header */
   var activeId = null;
   var ioMode = "";
   var openSecs = {};
@@ -393,7 +398,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
         created = true;
       }
       activeId = null; ensureActive();
-      tab = "week"; weekOffset = 0; monthOffset = 0; ioMode = "";
+      tab = "week"; weekOffset = 0; homeMonthOff = 0; monthOffset = 0; ioMode = "";
       if (!recovery) document.getElementById("auth").hidden = true;
       document.getElementById("app").hidden = false;
       setStatus("");
@@ -479,6 +484,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   }
   function endFor(start, k) { return dstr(addDays(addMonths(parse(start), monthsOf(k)), -1)); }
   function isMonthEnd(d) { return d.getDate() === new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); }
+  function homeBase() { var n = new Date(); return new Date(n.getFullYear(), n.getMonth() + homeMonthOff, 1); }
+  /* keep the home month label in step with the displayed week (moving up/down may cross a month) */
+  function syncHomeMonth() {
+    var ws = weekStart(weekOffset), we = addDays(ws, 6), b = homeBase();
+    var last = new Date(b.getFullYear(), b.getMonth() + 1, 0);
+    if (we < b) homeMonthOff--; else if (ws > last) homeMonthOff++;
+  }
+  /* after changing the month, show the current week (this month) or the week containing the 1st */
+  function weekOffsetForHomeMonth() {
+    if (homeMonthOff === 0) return 0;
+    var b = homeBase(), wsFirst = addDays(b, -b.getDay());
+    return Math.round((wsFirst - weekStart(0)) / (7 * 86400000));
+  }
   function weekStart(offset) {
     var now = new Date();
     return addDays(now, -now.getDay() + offset * 7);
@@ -601,9 +619,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       half("am", "M24 5 A19 19 0 0 0 24 43 Z") + half("pm", "M24 5 A19 19 0 0 1 24 43 Z") +
       '<line x1="24" y1="5" x2="24" y2="43" class="av-mid"></line></svg>';
   }
-  function availCard(ws) {
+  /* ホーム header: month (‹ ›) + week (▲ ▼) + availability circles, all in one card */
+  function weekNavCard(ws) {
     var now = new Date(), tstr = dstr(now), amPast = now.getHours() >= 12, freeLeft = 0;
-    var h = '<div class="card"><p style="margin:0 0 8px;font-weight:700">この週の空き</p><div class="avail">';
+    var b = homeBase(), wsFirst = addDays(b, -b.getDay());
+    var n = Math.round((ws - wsFirst) / (7 * 86400000)) + 1, we = addDays(ws, 6);
+    var h = '<div class="card"><div class="wk-nav" style="margin-bottom:8px"><button data-act="hmprev" aria-label="前の月">‹</button><b>' + b.getFullYear() + "年" + (b.getMonth() + 1) + '月</b><button data-act="hmnext" aria-label="次の月">›</button></div>';
+    h += '<div class="av-wrap"><div class="avail">';
     for (var i = 0; i < 7; i++) {
       var d = addDays(ws, i), ds = dstr(d);
       var isPast = ds < tstr, isToday = ds === tstr;
@@ -615,7 +637,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       h += '<div class="av-day' + (isToday ? " today" : "") + (isPast ? " past" : "") + '">' + availSvg(ds, busy, isPast, isToday, amPast) +
         '<div class="av-lab">' + DOW[d.getDay()] + '</div><div class="av-date">' + (isToday ? "今日" : (d.getMonth() + 1) + "/" + d.getDate()) + "</div></div>";
     }
-    h += '</div><p class="muted" style="margin:10px 0 0">あと空き：<b>' + freeLeft + '</b> コマ　<span style="font-size:12px">（左＝午前、右＝午後。色がある所が空き。タップで予定ありに切り替え）</span></p></div>';
+    h += '</div><div class="av-vnav"><button data-act="wkprev" aria-label="前の週">▲</button><button data-act="wknext" aria-label="次の週">▼</button></div></div>';
+    h += '<p class="muted" style="margin:10px 0 0"><b>第' + n + "週</b>　" + md(dstr(ws)) + "(日)〜" + md(dstr(we)) + "(土)　あと空き：<b>" + freeLeft + "</b> コマ" +
+      (weekOffset !== 0 ? ' <button class="ghost" data-act="wknow">今週に戻る</button>' : "") + "</p>" +
+      '<p class="muted" style="margin:2px 0 0;font-size:12px">左＝午前、右＝午後。色がある所が空き。タップで予定ありに切り替え</p></div>';
     return h;
   }
 
@@ -625,9 +650,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var ws = weekStart(weekOffset), wsStr = dstr(ws);
     var we = addDays(ws, 6), weStr = dstr(we);
     var h = goalChips();
-    h += '<div class="wk-nav"><button data-act="wkprev" aria-label="前の週">‹</button><b>' + md(wsStr) + "(日) 〜 " + md(weStr) +
-      '(土)</b><button data-act="wknext" aria-label="次の週">›</button></div>';
-    if (weekOffset !== 0) h += '<div class="centered"><button class="ghost" data-act="wknow">今週に戻る</button></div>';
+    h += weekNavCard(ws);
     if (!planned(g)) {
       return h + '<div class="card empty"><p>この目標の計画が、まだありません。<br>順番に案内するので、一緒につくりましょう。</p><button class="primary" data-act="wizard">目標をつくる（ステップ式）</button></div>';
     }
@@ -654,7 +677,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var prevNext = (g.weekReviews[dstr(addDays(ws, -7))] || {}).next;
     if (prevNext) h += '<p class="muted" style="margin:12px 0 2px">先週の自分から</p><p style="margin:0;white-space:pre-wrap">' + esc(prevNext) + "</p>";
     h += "</div>";
-    h += availCard(ws);
 
     /* 2) todos for the weekly goal */
     var todos = wtList(g, wsStr);
@@ -1097,7 +1119,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     if (act === "next") { wzNext(); return; }
     if (act === "back") { wzBack(); return; }
     if (act === "later") { wzSync(false); save(); closeWizard(); return; }
-    if (act === "home") { tab = "week"; weekOffset = 0; closeWizard(); return; }
+    if (act === "home") { tab = "week"; weekOffset = 0; homeMonthOff = 0; closeWizard(); return; }
     wzSync(false);
     if (act === "period") {
       var k = el.getAttribute("data-k");
@@ -1168,9 +1190,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     }
     if (act === "toggle") { toggle(el.getAttribute("data-date"), +el.getAttribute("data-tid")); return; }
     if (act === "goplan") { tab = "plan"; renderView(); return; }
-    if (act === "wkprev") { weekOffset--; renderView(); return; }
-    if (act === "wknext") { weekOffset++; renderView(); return; }
-    if (act === "wknow") { weekOffset = 0; renderView(); return; }
+    if (act === "wkprev") { weekOffset--; syncHomeMonth(); renderView(); return; }
+    if (act === "wknext") { weekOffset++; syncHomeMonth(); renderView(); return; }
+    if (act === "hmprev") { homeMonthOff--; weekOffset = weekOffsetForHomeMonth(); renderView(); return; }
+    if (act === "hmnext") { homeMonthOff++; weekOffset = weekOffsetForHomeMonth(); renderView(); return; }
+    if (act === "wknow") { weekOffset = 0; homeMonthOff = 0; renderView(); return; }
     if (act === "mprev") { monthOffset--; renderView(); return; }
     if (act === "mnext") { monthOffset++; renderView(); return; }
     if (act === "mnow") { monthOffset = 0; renderView(); return; }
