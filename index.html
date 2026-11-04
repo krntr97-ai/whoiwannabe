@@ -126,6 +126,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   /* ---------- Supabase ---------- */
   var SUPABASE_URL = "https://wrgqeutvzxfmwgftyvem.supabase.co";
   var SUPABASE_KEY = "sb_publishable_98uVa_982d0HmQlK0FRluw_Idvh_9Iz"; /* publishable key: safe to be public */
+  var INVITE_ONLY = true; /* true: 招待制（新規登録ボタンを出さない）。一般公開するときは false */
+  var inviteMode = /type=invite/.test(location.hash + location.search);
+  var linkProblem = /error_code=otp_expired|error=access_denied/.test(location.hash)
+    ? "リンクの有効期限が切れているか、すでに使われています。招待メールを、もう一度送ってもらってください。" : "";
   var sb = null;
   try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch (e) { sb = null; }
 
@@ -142,7 +146,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   var activeId = null;
   var ioMode = "";
   var saveTimer = null, saving = false, dirty = false, lastSynced = 0;
-  var authMode = "signin", recovery = false, booted = false;
+  var authMode = "signin", recovery = inviteMode, booted = false;
 
   /* ---------- state ---------- */
   function mkGoal(id, role) {
@@ -256,8 +260,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var prevEmail = email != null ? email : ((document.getElementById("em") || {}).value || "");
     var h = "";
     if (recovery) {
-      h += '<b>新しいパスワードを決める</b><label class="l" for="pw">新しいパスワード（8文字以上）</label><input id="pw" type="password" autocomplete="new-password">' +
-        '<p id="authMsg" class="muted" role="alert" style="margin:10px 0 0"></p><button class="primary" id="authGo">パスワードを変更する</button>';
+      h += '<b>' + (inviteMode ? "ようこそ。はじめに、パスワードを決めてください" : "新しいパスワードを決める") + '</b><label class="l" for="pw">' + (inviteMode ? "パスワード" : "新しいパスワード") + '（8文字以上）</label><input id="pw" type="password" autocomplete="new-password">' +
+        (inviteMode ? '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px"><input type="checkbox" id="agree" style="margin-top:5px"><span><a href="terms.html" target="_blank" rel="noopener">利用規約</a>と<a href="privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>に同意する</span></label>' : "") +
+        '<p id="authMsg" class="muted" role="alert" style="margin:10px 0 0"></p><button class="primary" id="authGo">' + (inviteMode ? "パスワードを設定して始める" : "パスワードを変更する") + '</button>';
     } else if (authMode === "forgot") {
       h += '<b>パスワードの再設定</b><label class="l" for="em">メールアドレス</label><input id="em" type="email" autocomplete="email" value="' + esc(prevEmail) + '">' +
         '<p id="authMsg" class="muted" role="alert" style="margin:10px 0 0"></p><button class="primary" id="authGo">再設定メールを送る</button>' +
@@ -268,7 +273,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
         '<label class="l" for="pw">パスワード（8文字以上）</label><input id="pw" type="password" autocomplete="' + (up ? "new-password" : "current-password") + '">' +
         (up ? '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px"><input type="checkbox" id="agree" style="margin-top:5px"><span><a href="terms.html" target="_blank" rel="noopener">利用規約</a>と<a href="privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>に同意する</span></label>' : "") +
         '<p id="authMsg" class="muted" role="alert" style="margin:10px 0 0"></p><button class="primary" id="authGo">' + (up ? "登録する" : "ログインする") + '</button>' +
-        '<div class="centered">' + (up ? '<button class="ghost" data-am="signin">アカウントをお持ちの方はログイン</button>' : '<button class="ghost" data-am="signup">はじめての方は新規登録</button>') +
+        '<div class="centered">' + (up ? '<button class="ghost" data-am="signin">アカウントをお持ちの方はログイン</button>' : (INVITE_ONLY ? '<span class="muted">招待制です。招待メールが届いた方のみご利用いただけます。</span>' : '<button class="ghost" data-am="signup">はじめての方は新規登録</button>')) +
         (up ? "" : '<button class="ghost" data-am="forgot">パスワードを忘れた</button>') + "</div>";
     }
     body.innerHTML = h;
@@ -284,11 +289,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     function busy(on) { btn.disabled = on; }
     if (recovery) {
       if (pw.length < 8) { authMessage("パスワードは8文字以上にしてください。"); return; }
+      if (inviteMode && !(document.getElementById("agree") || {}).checked) { authMessage("利用規約とプライバシーポリシーへの同意が必要です。"); return; }
       busy(true);
       sb.auth.updateUser({ password: pw }).then(function (res) {
         busy(false);
         if (res.error) { authMessage(jaError(res.error)); return; }
-        recovery = false;
+        recovery = false; inviteMode = false;
         document.getElementById("auth").hidden = true;
         if (!state && user) enterApp(user);
       });
@@ -331,7 +337,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
   function enterApp(u) {
     user = u;
-    document.getElementById("authBody").innerHTML = '<p class="muted" style="margin:0">データを読み込み中…</p>';
+    if (recovery) renderAuth(""); else document.getElementById("authBody").innerHTML = '<p class="muted" style="margin:0">データを読み込み中…</p>';
     sb.from("user_state").select("data,updated_at").eq("user_id", u.id).maybeSingle().then(function (res) {
       if (res.error) {
         document.getElementById("authBody").innerHTML =
@@ -391,7 +397,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
         if (event === "INITIAL_SESSION") {
           booted = true;
           if (session) { if (!user || user.id !== session.user.id || !state) enterApp(session.user); }
-          else showAuth();
+          else { showAuth(); if (linkProblem) authMessage(linkProblem); }
           return;
         }
         if (event === "SIGNED_IN" && session) {
