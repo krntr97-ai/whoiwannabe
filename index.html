@@ -93,6 +93,10 @@ input[type="text"], input[type="date"], input[type="email"], input[type="passwor
 .overlay { position: fixed; inset: 0; background: var(--bg); z-index: 20; overflow-y: auto; padding: calc(env(safe-area-inset-top, 0px) + 20px) 18px calc(env(safe-area-inset-bottom, 0px) + 40px); }
 .overlay > div { max-width: 520px; margin: 0 auto; }
 #auth { z-index: 30; }
+details.sec { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; margin-bottom: 12px; }
+details.sec > summary { padding: 14px 0; font-weight: 700; cursor: pointer; }
+details.sec[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+details.sec .card { background: var(--bg); }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .bar-fill { transition: none; } }
 </style>
@@ -101,9 +105,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 <main id="app" hidden>
   <div class="sync" id="sync" aria-live="polite"></div>
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" data-tab="week">今週</button>
+    <button class="tab" role="tab" data-tab="week">ホーム</button>
     <button class="tab" role="tab" data-tab="month">今月</button>
-    <button class="tab" role="tab" data-tab="plan">計画</button>
+    <button class="tab" role="tab" data-tab="plan">設定</button>
   </div>
   <div class="centered" style="margin:-6px 0 14px"><button class="ghost" id="whyBtn">💭 なぜやるんだっけ？</button></div>
 
@@ -145,12 +149,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   var monthOffset = 0;
   var activeId = null;
   var ioMode = "";
+  var openSecs = {};
   var saveTimer = null, saving = false, dirty = false, lastSynced = 0;
   var authMode = "signin", recovery = inviteMode, booted = false;
 
   /* ---------- state ---------- */
   function mkGoal(id, role) {
-    return { id: id, role: role, name: "", why: "", note: "", memo: "", start: dstr(new Date()), end: "", period: "", milestones: [], tasks: [], weekGoals: {}, weekTodos: {} };
+    return { id: id, role: role, name: "", why: "", note: "", memo: "", start: dstr(new Date()), end: "", period: "", milestones: [], tasks: [], weekGoals: {}, weekTodos: {}, weekReviews: {} };
   }
   function blank() { return { goals: [mkGoal(1, "main")], done: {}, nextId: 2, maxSubs: 2 }; }
 
@@ -163,6 +168,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       g.milestones = g.milestones || []; g.tasks = g.tasks || [];
       g.weekGoals = g.weekGoals || {};
       g.weekTodos = g.weekTodos || {};
+      g.weekReviews = g.weekReviews || {};
+      /* milestones that carry "actions" (monthly goals) are flagged act:true; older data: the earliest one */
+      if (g.milestones.length && !g.milestones.some(function (m) { return m.act; })) {
+        var firstM = g.milestones.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; })[0];
+        firstM.act = true;
+      }
       Object.keys(g.weekGoals).forEach(function (k) {
         var v = g.weekGoals[k];
         if (Array.isArray(v)) {
@@ -440,6 +451,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var last = new Date(y, m + 1, 0).getDate();
     return new Date(y, m, Math.min(day, last));
   }
+  function endFor(start, k) { return dstr(addDays(addMonths(parse(start), monthsOf(k)), -1)); }
+  function isMonthEnd(d) { return d.getDate() === new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); }
   function weekStart(offset) {
     var now = new Date();
     return addDays(now, -now.getDay() + offset * 7);
@@ -453,15 +466,48 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     for (var i = 0; i < ms.length; i++) { if (ds <= ms[i].date) return ms[i]; }
     return null;
   }
-  /* The 10 actions belong to the earliest milestone; they appear in every week up to that date. */
+  /* A "monthly goal" is a milestone flagged act:true. It owns up to 10 actions, shown in every week of its period. */
+  function periodStart(g, m) {
+    var ms = sortedMs(g), i = -1;
+    ms.forEach(function (x, idx) { if (x.id === m.id) i = idx; });
+    return i > 0 ? dstr(addDays(parse(ms[i - 1].date), 1)) : g.start;
+  }
+  function actMsFor(g, wsStr) {
+    var weStr = dstr(addDays(parse(wsStr), 6));
+    return sortedMs(g).filter(function (m) { return m.act && wsStr <= m.date && weStr >= periodStart(g, m); });
+  }
   function weekTasks(g, wsStr) {
     if (!planned(g)) return [];
-    var first = sortedMs(g)[0];
-    if (!first) return [];
-    var weStr = dstr(addDays(parse(wsStr), 6));
-    if (wsStr > first.date || weStr < g.start) return [];
-    return g.tasks.filter(function (t) { return t.mid === first.id; })
-      .sort(function (a, b) { return (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || (b.impact || 0) - (a.impact || 0); });
+    var out = [];
+    actMsFor(g, wsStr).forEach(function (m) {
+      g.tasks.filter(function (t) { return t.mid === m.id; })
+        .sort(function (a, b) { return (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || (b.impact || 0) - (a.impact || 0); })
+        .forEach(function (t) { out.push(t); });
+    });
+    return out;
+  }
+  /* create (or switch on) the next monthly goal, one month after the latest one */
+  function addNextMonthly(g) {
+    var ms = sortedMs(g);
+    var acts = ms.filter(function (x) { return x.act; });
+    var lastAct = acts.length ? acts[acts.length - 1] : null;
+    var next;
+    if (lastAct) {
+      var d = parse(lastAct.date);
+      next = isMonthEnd(d) ? new Date(d.getFullYear(), d.getMonth() + 2, 0) : addMonths(d, 1);
+    } else {
+      next = addDays(addMonths(parse(g.start), 1), -1);
+    }
+    var guard = 0;
+    while (dstr(next) < today() && guard++ < 36) {
+      next = isMonthEnd(next) ? new Date(next.getFullYear(), next.getMonth() + 2, 0) : addMonths(next, 1);
+    }
+    var nextStr = dstr(next);
+    var after = ms.filter(function (x) { return !x.act && (!lastAct || x.date > lastAct.date); })[0];
+    if (after && nextStr >= after.date) { after.act = true; return after; }
+    var nm = { id: state.nextId++, title: md(nextStr) + "までの目標", date: nextStr, act: true };
+    g.milestones.push(nm);
+    return nm;
   }
   function isDone(key, id) { return !!(state.done[key] && state.done[key][id] !== undefined); }
 
@@ -502,48 +548,83 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     return h + "</div>";
   }
 
+  /* goal chips for the home screen (no "add" button here) */
+  function goalChips() {
+    if (state.goals.length < 2) return "";
+    var h = '<div class="chips switch">';
+    orderedGoals().forEach(function (g) {
+      h += '<button class="chip" data-act="selgoal" data-gid="' + g.id + '" aria-pressed="' + (g.id === ag().id) + '">' + (g.role === "main" ? "★ " : "") + esc(gname(g)) + "</button>";
+    });
+    return h + "</div>";
+  }
+
+  /* ホーム: what to focus on this week, on one screen */
   function viewWeek() {
+    var g = ag();
     var ws = weekStart(weekOffset), wsStr = dstr(ws);
     var we = addDays(ws, 6), weStr = dstr(we);
-    var h = '<div class="wk-nav"><button data-act="wkprev" aria-label="前の週">‹</button><b>' + md(wsStr) + "(日) 〜 " + md(weStr) +
+    var h = goalChips();
+    h += '<div class="wk-nav"><button data-act="wkprev" aria-label="前の週">‹</button><b>' + md(wsStr) + "(日) 〜 " + md(weStr) +
       '(土)</b><button data-act="wknext" aria-label="次の週">›</button></div>';
     if (weekOffset !== 0) h += '<div class="centered"><button class="ghost" data-act="wknow">今週に戻る</button></div>';
-    var gs = orderedGoals().filter(planned);
-    if (!gs.length) {
-      return h + '<div class="card empty"><p>まだ計画がありません。<br>「計画」で、なりたい自分と期限を決めましょう。</p><button class="primary" data-act="goplan">計画をつくる</button></div>';
+    if (!planned(g)) {
+      return h + '<div class="card empty"><p>この目標の計画が、まだありません。<br>「設定」で、期限と中間目標をつくりましょう。</p><button class="primary" data-act="goplan">設定を開く</button></div>';
     }
     var ref = weekOffset === 0 ? today() : wsStr;
-    gs.forEach(function (g) {
-      var m = msFor(g, ref);
-      var wg = wgText(g, wsStr);
-      h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<span class="muted">' + esc(gname(g)) + "</span></p>";
-      h += '<p class="muted" style="margin:10px 0 0">この週の目標</p>';
-      h += wg ? '<p class="goal-name" style="margin:0;font-size:24px">' + esc(wg) + "</p>" : '<p class="muted" style="margin:0">まだ決まっていません（「今月」で決められます）</p>';
-      if (m) h += '<p class="muted" style="margin:10px 0 0">いまの中間目標：<b>' + esc(m.title) + "</b>（" + md(m.date) + "まで）</p>";
-      g.milestones.filter(function (x) { return x.date >= wsStr && x.date <= weStr; }).forEach(function (x) {
-        h += '<p class="ms-mark" style="margin:6px 0 0">◎ ' + esc(x.title) + "の日（" + md(x.date) + "）</p>";
-      });
-      if (m && m.memo) h += '<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">中間目標のメモを見る</summary><p style="margin:6px 0 0;white-space:pre-wrap">' + esc(m.memo) + "</p></details>";
-      if (g.memo) h += '<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">メモを見る</summary><p style="margin:6px 0 0;white-space:pre-wrap">' + esc(g.memo) + "</p></details>";
-      h += "</div>";
-      var todos = wtList(g, wsStr);
-      var futureWk = wsStr > dstr(weekStart(0));
-      h += '<h2 style="margin-top:4px">' + (wg ? "目標のためにやること" : "この週にやること") + (todos.length ? "（" + todos.filter(function (x) { return x.done; }).length + " / " + todos.length + "）" : "") + "</h2>";
-      todos.forEach(function (x) {
-        h += '<button class="t' + (x.done ? " on" : "") + '" data-act="wttoggle" data-gid="' + g.id + '" data-wk="' + wsStr + '" data-wtid="' + x.id + '"' + (futureWk ? " disabled" : "") + '><span class="box">' + (x.done ? "✓" : "") + '</span><span class="nm">' + esc(x.name) + "</span></button>";
-      });
-      h += '<div class="wg" style="margin-bottom:8px"><input type="text" data-wta="' + wsStr + '" data-gid="' + g.id + '" maxlength="60" placeholder="やることを追加（例：ランニングシューズを買う）" aria-label="この週にやることを追加"></div>';
-      var ts = weekTasks(g, wsStr);
-      var doneN = ts.filter(function (t) { return isDone(wsStr, t.id); }).length;
-      h += '<h2 style="margin-top:4px">この週の行動' + (ts.length ? "（" + doneN + " / " + ts.length + "）" : "") + "</h2>";
-      if (!ts.length) {
-        var first = sortedMs(g)[0];
-        h += '<div class="card empty">' + (first && wsStr > first.date ? "最初の区切りの期間は終わりました。" : "この週の行動はありません。<br>「計画」で、行動を追加できます。") + "</div>";
-      } else ts.forEach(function (t) { h += taskRow(wsStr, t); });
+    var m = msFor(g, ref);
+    var acts = actMsFor(g, wsStr);
+    var wg = wgText(g, wsStr);
+    var futureWk = wsStr > dstr(weekStart(0));
+
+    /* 1) the card that answers "what am I doing now?" */
+    h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<span class="muted">' + esc(gname(g)) + "</span></p>";
+    if (acts.length) {
+      h += '<p class="muted" style="margin:10px 0 0">今月の目標</p><p style="margin:0;font-weight:700;font-size:17px">' + esc(acts.map(function (x) { return x.title; }).join(" / ")) +
+        ' <span class="muted" style="font-weight:400">（' + md(periodStart(g, acts[0])) + "〜" + md(acts[acts.length - 1].date) + "）</span></p>";
+    } else if (m) {
+      h += '<p class="muted" style="margin:10px 0 0">次の区切り：<b>' + esc(m.title) + "</b>（" + md(m.date) + "まで）</p>";
+    }
+    h += '<p class="muted" style="margin:12px 0 0">この週の目標</p>';
+    if (wg) h += '<p class="goal-name" style="margin:0;font-size:24px">' + esc(wg) + "</p>";
+    else h += '<div class="wg" style="margin-top:4px"><input type="text" data-wg="' + wsStr + '" maxlength="60" placeholder="この週の目標を決める（例：朝ランを5回）" aria-label="この週の目標"></div>';
+    g.milestones.filter(function (x) { return x.date >= wsStr && x.date <= weStr; }).forEach(function (x) {
+      h += '<p class="ms-mark" style="margin:8px 0 0">◎ ' + esc(x.title) + "の日（" + md(x.date) + "）</p>";
     });
+    var prevNext = (g.weekReviews[dstr(addDays(ws, -7))] || {}).next;
+    if (prevNext) h += '<p class="muted" style="margin:12px 0 2px">先週の自分から</p><p style="margin:0;white-space:pre-wrap">' + esc(prevNext) + "</p>";
+    h += "</div>";
+
+    /* 2) todos for the weekly goal */
+    var todos = wtList(g, wsStr);
+    h += '<h2 style="margin-top:4px">' + (wg ? "目標のためにやること" : "この週にやること") + (todos.length ? "（" + todos.filter(function (x) { return x.done; }).length + " / " + todos.length + "）" : "") + "</h2>";
+    todos.forEach(function (x) {
+      h += '<button class="t' + (x.done ? " on" : "") + '" data-act="wttoggle" data-gid="' + g.id + '" data-wk="' + wsStr + '" data-wtid="' + x.id + '"' + (futureWk ? " disabled" : "") + '><span class="box">' + (x.done ? "✓" : "") + '</span><span class="nm">' + esc(x.name) + "</span></button>";
+    });
+    h += '<div class="wg" style="margin-bottom:8px"><input type="text" data-wta="' + wsStr + '" data-gid="' + g.id + '" maxlength="60" placeholder="やることを追加（例：ランニングシューズを買う）" aria-label="この週にやることを追加"></div>';
+
+    /* 3) the monthly goal's actions */
+    var ts = weekTasks(g, wsStr);
+    var doneN = ts.filter(function (t) { return isDone(wsStr, t.id); }).length;
+    h += '<h2 style="margin-top:4px">この週の行動' + (ts.length ? "（" + doneN + " / " + ts.length + "）" : "") + "</h2>";
+    if (!ts.length) {
+      if (!acts.length && m) {
+        h += '<div class="card empty"><p>この期間の「月の目標」が、まだありません。<br>次の区切り「' + esc(m.title) + '」に向けて、つくりましょう。</p><button class="primary" data-act="addmonthly" data-gid="' + g.id + '">月の目標をつくる</button></div>';
+      } else if (!m) {
+        h += '<div class="card empty">' + (ref < g.start ? "開始日の前です。" : "最後の区切りの期間は終わりました。") + "</div>";
+      } else {
+        h += '<div class="card empty">この週の行動はありません。<br>「設定」で、行動を追加できます。</div>';
+      }
+    } else ts.forEach(function (t) { h += taskRow(wsStr, t); });
+
+    /* 4) weekly review */
+    var rev = g.weekReviews[wsStr] || {};
+    h += '<h2 style="margin-top:4px">この週の振り返り</h2><div class="card">' +
+      '<label class="l" style="margin-top:0">やったこと</label><textarea data-rv="did" data-gid="' + g.id + '" data-wk="' + wsStr + '" rows="3" maxlength="1000"' + (futureWk ? " disabled" : "") + ' placeholder="この週にやったこと、できたこと">' + esc(rev.did || "") + "</textarea>" +
+      '<label class="l">次の週に意識すること</label><textarea data-rv="next" data-gid="' + g.id + '" data-wk="' + wsStr + '" rows="2" maxlength="1000"' + (futureWk ? " disabled" : "") + ' placeholder="次の週の自分へ">' + esc(rev.next || "") + "</textarea></div>";
     return h;
   }
 
+  /* 今月: the month at a glance — monthly goal, weekly goals, todos, and what to keep in mind */
   function viewMonth() {
     var g = ag();
     var now = new Date();
@@ -553,7 +634,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var h = switcher();
     h += '<div class="wk-nav"><button data-act="mprev" aria-label="前の月">‹</button><b>' + y + "年" + (mo + 1) + '月</b><button data-act="mnext" aria-label="次の月">›</button></div>';
     if (monthOffset !== 0) h += '<div class="centered"><button class="ghost" data-act="mnow">今月に戻る</button></div>';
-    h += '<p class="muted" style="margin:0 0 12px">「' + esc(gname(g)) + "」の、日曜〜土曜の1週間ごとの目標と、そのためにやることです。</p>";
+
+    var mStart = dstr(base), mEnd = dstr(last);
+    var actsM = planned(g) ? sortedMs(g).filter(function (x) { return x.act && mStart <= x.date && mEnd >= periodStart(g, x); }) : [];
+    h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<span class="muted">' + esc(gname(g)) + "</span></p>";
+    if (actsM.length) {
+      actsM.forEach(function (x) {
+        h += '<p class="muted" style="margin:10px 0 0">この月の目標</p><p style="margin:0;font-weight:700;font-size:17px">' + esc(x.title) +
+          ' <span class="muted" style="font-weight:400">（' + md(periodStart(g, x)) + "〜" + md(x.date) + "）</span></p>";
+      });
+    } else if (planned(g)) {
+      h += '<p class="muted" style="margin:10px 0 0">この月の「月の目標」は、まだありません。</p><button class="primary" data-act="addmonthly" data-gid="' + g.id + '">月の目標をつくる</button>';
+    } else {
+      h += '<p class="muted" style="margin:10px 0 0">「設定」で、期限と中間目標をつくると、ここに表示されます。</p>';
+    }
+    h += "</div>";
+
     var ws = addDays(base, -base.getDay());
     var thisWs = dstr(weekStart(0));
     var n = 1;
@@ -571,6 +667,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       });
       h += '<div class="wg"><input type="text" data-wta="' + wsStr + '" data-gid="' + g.id + '" maxlength="60" placeholder="やることを追加" aria-label="やることを追加"></div>';
       if (ts.length) h += '<div class="bar" style="margin-top:10px;height:10px"><div class="bar-fill" style="width:' + Math.round(doneN / ts.length * 100) + '%"></div></div><p class="muted" style="margin:4px 0 0">行動 ' + doneN + " / " + ts.length + " 完了</p>";
+      var rv0 = g.weekReviews[wsStr] || {};
+      if (rv0.did) h += '<p class="muted" style="margin:8px 0 0;white-space:pre-wrap"><b>やったこと</b>　' + esc(rv0.did) + "</p>";
+      if (rv0.next) h += '<p class="muted" style="margin:4px 0 0;white-space:pre-wrap"><b>次に意識すること</b>　' + esc(rv0.next) + "</p>";
       h += "</div>";
       ws = addDays(ws, 7); n++;
     }
@@ -589,11 +688,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       if (!g.name && !g.why && !g.note) return;
       any = true;
       h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<b style="font-size:18px">' + esc(gname(g)) + "</b></p>";
-      h += '<p class="muted" style="margin:10px 0 2px">どうしても叶えたい理由</p><p style="margin:0;white-space:pre-wrap">' + (g.why ? esc(g.why) : '<span class="muted">まだ書かれていません。「計画」で書いておくと、ここで見返せます。</span>') + "</p>";
+      h += '<p class="muted" style="margin:10px 0 2px">どうしても叶えたい理由</p><p style="margin:0;white-space:pre-wrap">' + (g.why ? esc(g.why) : '<span class="muted">まだ書かれていません。「設定」で書いておくと、ここで見返せます。</span>') + "</p>";
       if (g.note) h += '<p class="muted" style="margin:10px 0 2px">やめたくなったときの自分へ</p><p style="margin:0;white-space:pre-wrap">' + esc(g.note) + "</p>";
       h += "</div>";
     });
-    if (!any) h += '<div class="card"><p class="muted" style="margin:0">まだ書かれていません。「計画」で、なりたい自分と理由を書いておくと、ここで見返せます。</p></div>';
+    if (!any) h += '<div class="card"><p class="muted" style="margin:0">まだ書かれていません。「設定」で、なりたい自分と理由を書いておくと、ここで見返せます。</p></div>';
     h += '<div class="card"><p class="muted" style="margin:0 0 4px">ここまでの積み重ね</p><p style="margin:0"><b>' + count + "回</b>の行動</p></div>";
     var rest = null, wsStr = dstr(weekStart(0));
     orderedGoals().some(function (g) {
@@ -619,8 +718,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   }
 
   function accountHtml() {
-    var h = '<h2>アカウントとデータ</h2><div class="card">';
-    h += '<p class="muted" style="margin:0 0 8px">ログイン中：' + esc(user && user.email ? user.email : "") + "</p>";
+    var h = '<p class="muted" style="margin:0 0 8px">ログイン中：' + esc(user && user.email ? user.email : "") + "</p>";
     h += '<div style="display:flex;flex-wrap:wrap;gap:8px 14px">' +
       '<button class="ghost" data-act="logout">ログアウト</button>' +
       '<button class="ghost" data-act="io-export">データを書き出す</button>' +
@@ -635,9 +733,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       h += '<label class="l">書き出したデータを貼り付けてください（いまのデータは置き換わります）</label><textarea rows="8" id="ioIn" placeholder="ここに貼り付け"></textarea>' +
         '<button class="primary" data-act="doimport">このデータで置き換える</button><button class="ghost" data-act="io-close">キャンセル</button>';
     }
-    return h + "</div>";
+    return h;
   }
 
+  /* collapsible sections: they stay open/closed across re-renders */
+  function secOpen(key, g, dflt) { var k = key + ":" + g.id; return openSecs[k] !== undefined ? openSecs[k] : dflt; }
+  function secStart(key, g, title, dflt) {
+    return '<details class="sec" data-sec="' + key + ":" + g.id + '"' + (secOpen(key, g, dflt) ? " open" : "") + "><summary>" + title + "</summary>";
+  }
+
+  /* 設定: rarely touched, but everything is here */
   function viewPlan() {
     var g = ag();
     var h = switcher();
@@ -647,40 +752,45 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     if (state.goals.length > 1) h += '<button class="ghost" data-act="delgoal">この目標を削除</button>';
     h += "</div></div>";
 
-    h += '<div class="card"><label class="l">なりたい自分</label>' +
+    h += secStart("basic", g, "なりたい自分・理由・メモ", !g.name) +
+      '<label class="l">なりたい自分</label>' +
       '<input type="text" data-gf="name" maxlength="40" value="' + esc(g.name) + '" placeholder="例：毎朝ランニングする自分">' +
       '<label class="l">どうしても叶えたい理由（あとで見返す）</label><textarea data-gf="why" rows="3" maxlength="500" placeholder="どうしても叶えたい、本当の理由">' + esc(g.why || "") + "</textarea>" +
       '<label class="l">やめたくなったときの自分へ</label><textarea data-gf="note" rows="3" maxlength="500" placeholder="立ち上がるための一言">' + esc(g.note || "") + "</textarea>" +
       '<label class="l">メモ（内訳・考えたこと）</label><textarea data-gf="memo" rows="6" maxlength="2000" placeholder="例：月収100万円の内訳&#10;・誰から：&#10;・どんなサービスで：&#10;・いくら × 何件：">' + esc(g.memo || "") + "</textarea>" +
-      '<label class="l">開始日</label><input type="date" data-gf="start" value="' + esc(g.start) + '"></div>';
+      '<label class="l">開始日</label><input type="date" data-gf="start" value="' + esc(g.start) + '" style="margin-bottom:14px"></details>';
 
-    h += '<h2>いつまでに、なりたい？</h2><div class="card"><div class="chips" id="periodChips">';
+    h += secStart("period", g, "期限と、中間目標のつくり方", !g.period) + '<div class="chips" id="periodChips">';
     PERIODS.forEach(function (p) { h += '<button class="chip" style="min-width:76px" data-act="period" data-k="' + p.k + '" aria-pressed="' + (g.period === p.k) + '">' + p.label + "</button>"; });
     h += '<button class="chip" style="min-width:76px" data-act="period" data-k="over" aria-pressed="' + (g.period === "over") + '">それ以降</button></div>';
     if (g.period === "over") h += '<label class="l">期限の日付（10年後より先）</label><input type="date" data-gf="end" value="' + esc(g.end) + '">';
     else if (g.period && g.end) h += '<p class="muted" style="margin:10px 0 0">期限：' + g.end.replace(/-/g, "/") + "</p>";
     h += '<p class="muted" style="margin:10px 0 0">選んだ期限より手前の区切り（1ヶ月後〜）が、中間目標になります。</p>';
-    h += '<button class="primary" data-act="gen">逆算して中間目標をつくる</button></div>';
+    h += '<button class="primary" data-act="gen" style="margin-bottom:14px">逆算して中間目標をつくる</button></details>';
 
     var ms = sortedMs(g);
-    if (ms.length) h += "<h2>中間目標とやること</h2>";
-    ms.forEach(function (m) {
-      h += '<div class="card" data-mid="' + m.id + '"><div class="ms-head"><input type="text" data-mf="title" maxlength="40" value="' + esc(m.title) + '" aria-label="中間目標の名前">' +
-        '<button class="del" data-act="delms" aria-label="この中間目標を削除">×</button></div>' +
-        '<input type="date" data-mf="date" value="' + esc(m.date) + '" aria-label="達成する日">' +
-        '<textarea data-mf="memo" rows="3" maxlength="1000" style="margin-top:8px" placeholder="この中間目標のメモ（例：内訳、必要なこと）" aria-label="この中間目標のメモ">' + esc(m.memo || "") + "</textarea>";
-      if (m.id !== ms[0].id) { h += "</div>"; return; }
-      var ts = g.tasks.filter(function (t) { return t.mid === m.id; }).sort(function (a, b) { return (b.impact || 0) - (a.impact || 0); });
-      h += '<div style="margin-top:14px"><b>1ヶ月目の目標を100%達成する行動（' + ts.length + ' / 10）</b><p class="muted" style="margin:4px 0 8px">📌センターピン＝倒せば他も連鎖して倒れやすい、一番大事な行動。いくつでも選べます（複数OK）。影響度（1〜10）は、その行動が目標達成にどれだけ効くか。高い順に並びます。</p>';
-      ts.forEach(function (t) {
-        h += '<div class="tr" data-tid="' + t.id + '"><button class="del" style="width:36px;height:36px;font-size:18px;' + (t.pin ? "" : "opacity:.3;") + '" data-act="pin" aria-label="センターピンにする" aria-pressed="' + !!t.pin + '">📌</button><span class="nm">' + esc(t.name) + '</span><button class="del" data-act="deltask" aria-label="削除">×</button>' + impactLine(t) + "</div>";
+    if (ms.length) {
+      h += secStart("ms", g, "中間目標と月の目標（行動）", false);
+      h += '<p class="muted" style="margin:0 0 6px">節目（中間目標）に向けて、1か月ごとに「月の目標」をつくって進めます。いまの月の目標が終わったら、次の月の目標をつくりましょう。</p><button class="primary" style="margin:0 0 12px" data-act="addmonthly" data-gid="' + g.id + '">＋ 次の月の目標をつくる</button>';
+      ms.forEach(function (m) {
+        h += '<div class="card" data-mid="' + m.id + '"><div class="ms-head"><input type="text" data-mf="title" maxlength="40" value="' + esc(m.title) + '" aria-label="中間目標の名前">' +
+          '<button class="del" data-act="delms" aria-label="この中間目標を削除">×</button></div>' +
+          '<input type="date" data-mf="date" value="' + esc(m.date) + '" aria-label="達成する日">' +
+          '<textarea data-mf="memo" rows="3" maxlength="1000" style="margin-top:8px" placeholder="この中間目標のメモ（例：内訳、必要なこと）" aria-label="この中間目標のメモ">' + esc(m.memo || "") + "</textarea>";
+        if (!m.act) { h += "</div>"; return; }
+        var ts = g.tasks.filter(function (t) { return t.mid === m.id; }).sort(function (a, b) { return (b.impact || 0) - (a.impact || 0); });
+        h += '<div style="margin-top:14px"><span class="muted">期間：' + md(periodStart(g, m)) + "〜" + md(m.date) + '</span><br><b>この目標を100%達成する行動（' + ts.length + ' / 10）</b><p class="muted" style="margin:4px 0 8px">📌センターピン＝倒せば他も連鎖して倒れやすい、一番大事な行動。いくつでも選べます（複数OK）。影響度（1〜10）は、その行動が目標達成にどれだけ効くか。高い順に並びます。</p>';
+        ts.forEach(function (t) {
+          h += '<div class="tr" data-tid="' + t.id + '"><button class="del" style="width:36px;height:36px;font-size:18px;' + (t.pin ? "" : "opacity:.3;") + '" data-act="pin" aria-label="センターピンにする" aria-pressed="' + !!t.pin + '">📌</button><span class="nm">' + esc(t.name) + '</span><button class="del" data-act="deltask" aria-label="削除">×</button>' + impactLine(t) + "</div>";
+        });
+        h += "</div>";
+        if (ts.length >= 10) { h += '<p class="muted" style="margin-top:10px">10個そろいました。</p></div>'; return; }
+        h += '<div class="add-t"><input type="text" class="newname" maxlength="30" placeholder="行動を追加（例：5分走る）" aria-label="行動の名前"><div class="imp" style="padding:0"><span>影響度（1〜10）</span><select class="newimpact" aria-label="影響度">' + impactOptions(5) + '</select></div>';
+        h += '<button class="primary" style="margin-top:0" data-act="addtask">追加</button></div></div>';
       });
-      h += "</div>";
-      if (ts.length >= 10) { h += '<p class="muted" style="margin-top:10px">10個そろいました。</p></div>'; return; }
-      h += '<div class="add-t"><input type="text" class="newname" maxlength="30" placeholder="行動を追加（例：5分走る）" aria-label="行動の名前"><div class="imp" style="padding:0"><span>影響度（1〜10）</span><select class="newimpact" aria-label="影響度">' + impactOptions(5) + '</select></div>';
-      h += '<button class="primary" style="margin-top:0" data-act="addtask">追加</button></div></div>';
-    });
-    h += accountHtml();
+      h += "</details>";
+    }
+    h += secStart("acct", g, "アカウントとデータ", false) + accountHtml() + '<div style="height:12px"></div></details>';
     return h;
   }
 
@@ -745,26 +855,34 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       save(); renderView(); return;
     }
 
+    if (act === "addmonthly") {
+      var mg = state.goals.filter(function (x) { return x.id === +el.getAttribute("data-gid"); })[0] || g;
+      if (!planned(mg)) { alert("先に、期限を選んで中間目標をつくってください。"); return; }
+      addNextMonthly(mg);
+      activeId = mg.id; tab = "plan";
+      save(); renderView(); return;
+    }
     if (act === "period") {
       var k = el.getAttribute("data-k");
       g.period = k;
       if (k === "over") g.end = "";
-      else g.end = dstr(addMonths(parse(g.start), monthsOf(k)));
+      else g.end = endFor(g.start, k);
       save(); renderView(); return;
     }
     if (act === "gen") {
       if (!g.period) { alert("期限を選んでください。"); return; }
       if (!g.start) { alert("開始日を入れてください。"); return; }
-      if (g.period !== "over") g.end = dstr(addMonths(parse(g.start), monthsOf(g.period)));
+      if (g.period !== "over") g.end = endFor(g.start, g.period);
       var limit = dstr(addMonths(parse(g.start), 120));
       if (g.period === "over" && (!g.end || g.end <= limit)) { alert("「それ以降」は、10年後より先の日付を入れてください。"); return; }
       if (g.milestones.length && !confirm("いまの中間目標と行動を消して、つくり直します。よろしいですか？")) return;
       g.milestones = []; g.tasks = [];
       var selM = g.period === "over" ? 1e9 : monthsOf(g.period);
       PERIODS.forEach(function (p) {
-        if (p.m < selM) g.milestones.push({ id: state.nextId++, title: p.label + "の目標", date: dstr(addMonths(parse(g.start), p.m)) });
+        if (p.m < selM) g.milestones.push({ id: state.nextId++, title: p.label + "の目標", date: dstr(addDays(addMonths(parse(g.start), p.m), -1)) });
       });
       g.milestones.push({ id: state.nextId++, title: g.name || "ゴール", date: g.end });
+      sortedMs(g)[0].act = true; /* the first milestone is the first monthly goal */
       save(); renderView(); return;
     }
     if (act === "delms") {
@@ -838,6 +956,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       if (val) { tg2.weekTodos[wta] = wtList(tg2, wta).concat([{ id: state.nextId++, name: val, done: false }]); save(); }
       renderView(); return;
     }
+    var rv = t.getAttribute("data-rv");
+    if (rv) {
+      var rg = state.goals.filter(function (x) { return x.id === +t.getAttribute("data-gid"); })[0] || g;
+      var rk = t.getAttribute("data-wk");
+      rg.weekReviews[rk] = rg.weekReviews[rk] || {};
+      rg.weekReviews[rk][rv] = t.value;
+      save(); return;
+    }
     var tf = t.getAttribute("data-tf");
     if (tf) {
       var tid2 = +t.closest("[data-tid]").getAttribute("data-tid");
@@ -848,7 +974,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     if (gf) {
       g[gf] = t.value;
       if (gf === "start" && g.period && g.period !== "over" && t.value) {
-        g.end = dstr(addMonths(parse(t.value), monthsOf(g.period)));
+        g.end = endFor(t.value, g.period);
         save(); renderView(); return;
       }
       if (gf === "name") { save(); renderView(); return; }
@@ -862,6 +988,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       if (mf === "date") renderView();
     }
   });
+
+  /* remember which settings sections are open (toggle does not bubble, so listen in the capture phase) */
+  view.addEventListener("toggle", function (e) {
+    var key = e.target && e.target.getAttribute ? e.target.getAttribute("data-sec") : null;
+    if (key) openSecs[key] = e.target.open;
+  }, true);
 
   var rescue = document.getElementById("rescue");
   document.getElementById("whyBtn").addEventListener("click", function () {
