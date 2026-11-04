@@ -93,6 +93,8 @@ input[type="text"], input[type="date"], input[type="email"], input[type="passwor
 .overlay { position: fixed; inset: 0; background: var(--bg); z-index: 20; overflow-y: auto; padding: calc(env(safe-area-inset-top, 0px) + 20px) 18px calc(env(safe-area-inset-bottom, 0px) + 40px); }
 .overlay > div { max-width: 520px; margin: 0 auto; }
 #auth { z-index: 30; }
+#wizard { z-index: 25; }
+.wiz-ex { background: var(--bg); border-left: 3px solid var(--accent); padding: 6px 12px; font-size: 13px; color: var(--muted); border-radius: 6px; margin: 6px 0 12px; }
 .avail { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .av-day { text-align: center; }
 .av-day svg { width: 100%; max-width: 46px; height: auto; display: block; margin: 0 auto; overflow: visible; }
@@ -123,10 +125,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     <button class="tab" role="tab" data-tab="week">ホーム</button>
     <button class="tab" role="tab" data-tab="plan">計画</button>
   </div>
+  <p class="muted" id="tabHint" style="margin:-8px 0 8px;text-align:center;font-size:13px"></p>
   <div class="centered" style="margin:-6px 0 14px"><button class="ghost" id="whyBtn">💭 なぜやるんだっけ？</button></div>
 
   <div id="view"></div>
   <div id="rescue" class="overlay" hidden></div>
+  <div id="wizard" class="overlay" hidden></div>
 </main>
 
 <div id="auth" class="overlay">
@@ -393,6 +397,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       setStatus("");
       renderView();
       if (created) { dirty = true; flush(); }
+      var g0 = state.goals[0];
+      if (state.goals.length === 1 && !g0.name && !planned(g0)) openWizard(g0, 1);
     });
   }
 
@@ -401,6 +407,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     user = null; state = null; dirty = false; saving = false; lastSynced = 0;
     document.getElementById("app").hidden = true;
     document.getElementById("rescue").hidden = true;
+    document.getElementById("wizard").hidden = true;
     authMode = "signin";
     showAuth();
   }
@@ -546,6 +553,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (b) {
       b.setAttribute("aria-selected", b.getAttribute("data-tab") === tab ? "true" : "false");
     });
+    var hint = document.getElementById("tabHint");
+    if (hint) hint.textContent = tab === "week" ? "ホーム：今週やることを、見て・チェックする場所" : "計画：目標や、月・週の計画を、立てる・直す場所";
   }
 
   function taskRow(key, t) {
@@ -618,7 +627,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       '(土)</b><button data-act="wknext" aria-label="次の週">›</button></div>';
     if (weekOffset !== 0) h += '<div class="centered"><button class="ghost" data-act="wknow">今週に戻る</button></div>';
     if (!planned(g)) {
-      return h + '<div class="card empty"><p>この目標の計画が、まだありません。<br>「計画」で、期限と中間目標をつくりましょう。</p><button class="primary" data-act="goplan">計画を開く</button></div>';
+      return h + '<div class="card empty"><p>この目標の計画が、まだありません。<br>順番に案内するので、一緒につくりましょう。</p><button class="primary" data-act="wizard">目標をつくる（ステップ式）</button></div>';
     }
     var ref = weekOffset === 0 ? today() : wsStr;
     var m = msFor(g, ref);
@@ -803,6 +812,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     if (state.goals.length > 1) h += '<button class="ghost" data-act="delgoal">この目標を削除</button>';
     h += "</div></div>";
 
+    h += '<div class="card"><p class="muted" style="margin:0 0 6px">' + (nextWizardStep(g) === 1 && planned(g) ? "はじめから順番に、見直したいとき。" : "何から入力すればいいか迷ったら、順番に案内します。") + '</p><button class="primary" style="margin:0" data-act="wizard">' + (nextWizardStep(g) === 1 && planned(g) ? "ステップ式で見直す" : "ステップ式で目標をつくる") + "</button></div>";
     h += secStart("month", g, "今月の計画（月の目標・週の目標）", true) + monthInner(g) + '<div style="height:6px"></div></details>';
     h += secStart("basic", g, "なりたい自分・理由・メモ", !g.name) +
       '<label class="l">なりたい自分</label>' +
@@ -853,6 +863,266 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     v.innerHTML = tab === "week" ? viewWeek() : viewPlan();
   }
 
+  /* ---------- guided goal setup (step-by-step) ---------- */
+  var wizStep = 1, wizId = null;
+  var WZ = [
+    { t: "なりたい自分を、一言で", why: "まず、ゴールの姿をはっきりさせます。" },
+    { t: "どうしても叶えたい理由", why: "続けるのがつらくなったとき、立ち上がるためのものです。「💭 なぜやるんだっけ？」の画面に表示されます。" },
+    { t: "いつまでに、なりたい？", why: "期限を選ぶと、そこから逆算して「節目」（期限までの途中の目標）が自動でできます。" },
+    { t: "節目の確認", why: "それぞれの節目で、どんな状態になっていたいかを、一言で書きます。" },
+    { t: "最初の月の目標と、行動", why: "いちばん近い節目が、最初の「月の目標」です。その1か月で、やることを決めます。" },
+    { t: "今週の目標と、やること", why: "今週に落とし込みます。このあとは、毎日「ホーム」を見るだけでOKです。" }
+  ];
+  function wzGoal() { return state.goals.filter(function (x) { return x.id === wizId; })[0] || ag(); }
+  function wzEx(text) { return '<div class="wiz-ex">例：' + text + "</div>"; }
+
+  function validatePeriod(g) {
+    if (!g.period) return "期限を選んでください。";
+    if (!g.start) return "開始日を入れてください。";
+    if (g.period !== "over") g.end = endFor(g.start, g.period);
+    if (g.period === "over") {
+      var limit = dstr(addMonths(parse(g.start), 120));
+      if (!g.end || g.end <= limit) return "「それ以降」は、10年後より先の日付を入れてください。";
+    }
+    return "";
+  }
+  function buildMilestones(g) {
+    g.milestones = []; g.tasks = [];
+    var selM = g.period === "over" ? 1e9 : monthsOf(g.period);
+    PERIODS.forEach(function (p) {
+      if (p.m < selM) g.milestones.push({ id: state.nextId++, title: p.label + "の目標", date: dstr(addDays(addMonths(parse(g.start), p.m), -1)) });
+    });
+    g.milestones.push({ id: state.nextId++, title: g.name || "ゴール", date: g.end });
+    sortedMs(g)[0].act = true; /* the first milestone is the first monthly goal */
+    g.genKey = g.start + "|" + g.period + "|" + g.end;
+  }
+  function nextWizardStep(g) {
+    if (!g.name) return 1;
+    if (!planned(g)) return g.why ? 3 : 2;
+    var first = sortedMs(g)[0];
+    if (!g.tasks.some(function (t) { return t.mid === first.id; })) return 5;
+    if (!wgText(g, dstr(weekStart(0)))) return 6;
+    return 1;
+  }
+
+  /* copy what is typed on the current screen into the goal */
+  function wzSync(addPending) {
+    var root = document.getElementById("wizard"), g = wzGoal(), wsStr = dstr(weekStart(0));
+    Array.prototype.forEach.call(root.querySelectorAll("[data-wzf]"), function (i) { g[i.getAttribute("data-wzf")] = i.value; });
+    if (g.period && g.period !== "over" && g.start) g.end = endFor(g.start, g.period);
+    Array.prototype.forEach.call(root.querySelectorAll("[data-wzm]"), function (i) {
+      var mid = +i.getAttribute("data-mid");
+      g.milestones.forEach(function (m) { if (m.id === mid) m[i.getAttribute("data-wzm")] = i.value; });
+    });
+    var w = root.querySelector("[data-wzwg]");
+    if (w) g.weekGoals[wsStr] = w.value.trim();
+    if (addPending) {
+      var nt = root.querySelector(".wz-newname");
+      if (nt && nt.value.trim()) wzAddTask(g, nt.value.trim(), +root.querySelector(".wz-newimpact").value);
+      var nw = root.querySelector(".wz-newtodo");
+      if (nw && nw.value.trim()) wzAddTodo(g, nw.value.trim());
+    }
+  }
+  function wzAddTask(g, name, impact) {
+    var m = sortedMs(g)[0];
+    if (!m || g.tasks.filter(function (t) { return t.mid === m.id; }).length >= 10) return false;
+    g.tasks.push({ id: state.nextId++, mid: m.id, name: name, impact: impact });
+    return true;
+  }
+  function wzAddTodo(g, name) {
+    var k = dstr(weekStart(0));
+    g.weekTodos[k] = wtList(g, k).concat([{ id: state.nextId++, name: name, done: false }]);
+  }
+
+  function wzBody(g) {
+    var h = "";
+    if (wizStep === 1) {
+      h += '<label class="l">なりたい自分（一言で）</label><input type="text" data-wzf="name" maxlength="40" value="' + esc(g.name) + '" placeholder="なりたい自分は？">' +
+        wzEx("毎朝ランニングする自分／月収100万円を稼ぐ自分／英語で仕事ができる自分") +
+        '<label class="l">それを叶えたら待っている、嬉しい未来（あとで書いてもOK）</label><textarea data-wzf="future" rows="3" maxlength="500" placeholder="どんな毎日になっている？">' + esc(g.future || "") + "</textarea>" +
+        wzEx("朝のランニングが気持ちよくて、仕事にも自信が持てている");
+    } else if (wizStep === 2) {
+      h += '<label class="l">どうしても叶えたい理由</label><textarea data-wzf="why" rows="4" maxlength="500" placeholder="本当の理由を、正直に">' + esc(g.why || "") + "</textarea>" +
+        wzEx("今の自分に自信が持てなくて、変わりたいから。家族に、いい姿を見せたいから") +
+        '<label class="l">やめたくなったときの自分へ（あとで書いてもOK）</label><textarea data-wzf="note" rows="3" maxlength="500" placeholder="立ち上がるための一言">' + esc(g.note || "") + "</textarea>" +
+        wzEx("ここまでやってきたのだから、あと5分だけやってみよう");
+    } else if (wizStep === 3) {
+      h += '<div class="chips">';
+      PERIODS.forEach(function (p) { h += '<button class="chip" style="min-width:76px" data-wz="period" data-k="' + p.k + '" aria-pressed="' + (g.period === p.k) + '">' + p.label + "</button>"; });
+      h += '<button class="chip" style="min-width:76px" data-wz="period" data-k="over" aria-pressed="' + (g.period === "over") + '">それ以降</button></div>';
+      if (g.period === "over") h += '<label class="l">期限の日付（10年後より先）</label><input type="date" data-wzf="end" value="' + esc(g.end) + '">';
+      else if (g.period && g.end) h += '<p style="margin:12px 0 0">期限：<b>' + g.end.replace(/-/g, "/") + "</b></p>";
+      h += wzEx("「1年後」を選ぶと、節目が「1ヶ月後・3ヶ月後・6ヶ月後」に、自動でできます") +
+        '<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">開始日を変える（ふつうは、今日のままでOK）</summary><input type="date" data-wzf="start" value="' + esc(g.start) + '"></details>';
+    } else if (wizStep === 4) {
+      var ms = sortedMs(g);
+      ms.slice(0, -1).forEach(function (m) {
+        h += '<div class="card"><b>' + esc(m.title) + '</b> <span class="muted">' + md(m.date) + "まで</span>" +
+          '<label class="l">そのとき、どんな状態になっていたい？</label><textarea data-wzm="memo" data-mid="' + m.id + '" rows="2" maxlength="1000" placeholder="一言でOK">' + esc(m.memo || "") + "</textarea></div>";
+      });
+      h += wzEx("朝ランが週3回、続いている／売上が月10万円になっている") +
+        '<div class="card" style="margin-top:12px"><b>最終目標</b> <span class="muted">' + esc(g.name) + "（" + md(g.end) + "）</span></div>" +
+        '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px"><input type="checkbox" id="wzCheck" style="margin-top:5px"><span>この節目がすべて達成できたら、最終目標も達成できそうだ</span></label>' +
+        '<p class="muted" style="margin:6px 0 0">チェックできないときは、節目の内容を見直してみましょう（このまま進んでもOKです）。</p>';
+    } else if (wizStep === 5) {
+      var msL = sortedMs(g), first = msL[0], only = msL.length === 1;
+      if (only) h += '<div class="card"><b>' + esc(g.name) + '</b> <span class="muted">（' + md(first.date) + "まで）</span></div>";
+      else {
+        h += '<label class="l">' + md(periodStart(g, first)) + "〜" + md(first.date) + "の間に、どうなっていたい？（月の目標の名前）</label>" +
+          '<input type="text" data-wzm="title" data-mid="' + first.id + '" maxlength="40" value="' + esc(first.title) + '">' + wzEx("朝ランが週3回できている／集客の導線が3つある");
+      }
+      var ts = g.tasks.filter(function (t) { return t.mid === first.id; });
+      h += '<p style="margin:16px 0 4px"><b>この目標を100%達成するための行動（' + ts.length + ' / 10）</b></p>' +
+        '<p class="muted" style="margin:0 0 6px">思いつくものを書き出しましょう。まず3個でもOKです（最大10個）。</p>' + wzEx("朝6時に起きる／ランニングシューズを買う／5分だけ走る");
+      ts.forEach(function (t) {
+        var v = t.impact || 0;
+        h += '<div class="tr" data-tid="' + t.id + '"><button class="del" style="width:36px;height:36px;font-size:18px;' + (t.pin ? "" : "opacity:.3;") + '" data-wz="pin" data-tid="' + t.id + '" aria-label="センターピンにする">📌</button><span class="nm">' + esc(t.name) +
+          '</span><button class="del" data-wz="deltask" data-tid="' + t.id + '" aria-label="削除">×</button><div class="imp"><span>影響度</span><div class="ibar"><i style="width:' + v * 10 + '%"></i></div><select data-wzimp data-tid="' + t.id + '" aria-label="影響度"><option value="0"' + (v ? "" : " selected") + ">未設定</option>" + impactOptions(v) + "</select></div></div>";
+      });
+      if (ts.length < 10) {
+        h += '<div class="add-t"><input type="text" class="wz-newname" maxlength="30" placeholder="行動を1つ書く" aria-label="行動の名前"><div class="imp" style="padding:0"><span>影響度（1〜10）</span><select class="wz-newimpact" aria-label="影響度">' + impactOptions(5) + '</select></div><button class="primary" style="margin-top:0" data-wz="addtask">この行動を追加</button></div>';
+      }
+      h += '<p class="muted" style="margin:12px 0 0">📌センターピン＝これが進むと、他も進みやすい、いちばん大事な行動（複数OK）。影響度＝目標達成にどれだけ効くか。分からなければ、あとで決めてOKです。</p>';
+    } else if (wizStep === 6) {
+      var wsStr = dstr(weekStart(0));
+      h += '<label class="l">この週（' + md(wsStr) + "〜）の目標</label>" +
+        '<input type="text" data-wzwg maxlength="60" value="' + esc(wgText(g, wsStr)) + '" placeholder="今週、どうなっていたい？">' + wzEx("朝ランを3回やる／お客さんに3人、声をかける");
+      var todos = wtList(g, wsStr);
+      h += '<p style="margin:16px 0 4px"><b>その目標のために、やること</b></p>' + wzEx("ランニングシューズを買う／走るコースを決める");
+      todos.forEach(function (x) {
+        h += '<div class="wg"><span class="nm" style="font-weight:400">・' + esc(x.name) + '</span><button class="del" data-wz="delwt" data-wtid="' + x.id + '" aria-label="削除">×</button></div>';
+      });
+      h += '<div class="wg"><input type="text" class="wz-newtodo" maxlength="60" placeholder="やることを1つ書く" aria-label="やること"></div>' +
+        '<button class="ghost" data-wz="addwt">＋ やることを追加</button>';
+    }
+    return h;
+  }
+
+  function wzDone(g) {
+    var wsStr = dstr(weekStart(0)), ms = sortedMs(g), first = ms[0];
+    var h = '<div><h2 style="margin:20px 0 4px;font-size:22px">できました 🎉</h2><p class="muted" style="margin:0 0 12px">いまの内容は、こうなっています。あとから、いつでも「計画」で直せます。</p>';
+    h += '<div class="card"><p class="muted" style="margin:0">なりたい自分</p><p class="goal-name" style="margin:0">' + esc(g.name) + "</p>";
+    if (g.future) h += '<p class="muted" style="margin:8px 0 0">嬉しい未来：' + esc(g.future) + "</p>";
+    if (g.end) h += '<p class="muted" style="margin:8px 0 0">期限：' + g.end.replace(/-/g, "/") + "</p>";
+    h += "</div>";
+    if (ms.length > 1) {
+      h += '<div class="card"><p class="muted" style="margin:0 0 4px">節目</p>';
+      ms.forEach(function (m) { h += "<p style=\"margin:0\">・" + md(m.date) + "　" + esc(m.memo ? m.memo : m.title) + "</p>"; });
+      h += "</div>";
+    }
+    if (first) {
+      var ts = g.tasks.filter(function (t) { return t.mid === first.id; });
+      h += '<div class="card"><p class="muted" style="margin:0">最初の月の目標</p><p style="margin:0;font-weight:700">' + esc(first.title) + ' <span class="muted" style="font-weight:400">（' + md(periodStart(g, first)) + "〜" + md(first.date) + "）</span></p>" +
+        '<p class="muted" style="margin:6px 0 0">行動：' + ts.length + "個" + (ts.some(function (t) { return t.pin; }) ? "（📌あり）" : "") + "</p></div>";
+    }
+    var wg = wgText(g, wsStr);
+    h += '<div class="card"><p class="muted" style="margin:0">今週の目標</p><p style="margin:0;font-weight:700">' + (wg ? esc(wg) : '<span class="muted" style="font-weight:400">まだ決まっていません</span>') + "</p></div>";
+    h += '<button class="primary" data-wz="home">ホームを開く</button></div>';
+    return h;
+  }
+
+  function renderWizard() {
+    var g = wzGoal(), el = document.getElementById("wizard");
+    if (wizStep > 6) { el.innerHTML = wzDone(g); return; }
+    /* keep text that was typed but not added yet, so a re-render does not erase it */
+    var oldName = el.querySelector(".wz-newname"), oldTodo = el.querySelector(".wz-newtodo");
+    var keepName = oldName ? oldName.value : "", keepTodo = oldTodo ? oldTodo.value : "";
+    var meta = WZ[wizStep - 1];
+    var h = '<div><p class="muted" style="margin:0 0 6px">ステップ ' + wizStep + " / 6</p>" +
+      '<div class="bar" style="height:8px"><div class="bar-fill" style="width:' + Math.round(wizStep / 6 * 100) + '%"></div></div>' +
+      '<h2 style="margin:16px 0 4px;font-size:20px">' + meta.t + '</h2><p class="muted" style="margin:0 0 12px">' + meta.why + "</p>" + wzBody(g);
+    h += '<button class="primary" data-wz="next">' + (wizStep === 6 ? "完了" : "次へ") + "</button>" +
+      '<div style="display:flex;justify-content:space-between;margin-top:6px"><button class="ghost" data-wz="back">← 戻る</button><button class="ghost" data-wz="later">あとで続ける</button></div></div>';
+    el.innerHTML = h;
+    var nn = el.querySelector(".wz-newname"), nt = el.querySelector(".wz-newtodo");
+    if (nn && keepName) nn.value = keepName;
+    if (nt && keepTodo) nt.value = keepTodo;
+  }
+  function openWizard(g, step) {
+    wizId = g.id; wizStep = step || 1;
+    var el = document.getElementById("wizard");
+    el.hidden = false; renderWizard(); el.scrollTop = 0;
+  }
+  function closeWizard() {
+    document.getElementById("wizard").hidden = true;
+    renderView();
+  }
+
+  function wzNext() {
+    wzSync(true);
+    var g = wzGoal();
+    if (wizStep === 1 && !g.name.trim()) { alert("なりたい自分を、一言で入れてください。"); return; }
+    if (wizStep === 3) {
+      var err = validatePeriod(g);
+      if (err) { alert(err); return; }
+      var key = g.start + "|" + g.period + "|" + g.end;
+      if (!g.milestones.length) { buildMilestones(g); }
+      else if (g.genKey && g.genKey !== key) {
+        if (!confirm("期限や開始日を変えたので、節目と行動を作り直します。よろしいですか？")) return;
+        buildMilestones(g);
+      } else if (!g.genKey) g.genKey = key;
+    }
+    var n = wizStep + 1;
+    if (n === 4 && sortedMs(g).length < 2) n = 5;
+    wizStep = n; save(); renderWizard(); document.getElementById("wizard").scrollTop = 0;
+  }
+  function wzBack() {
+    wzSync(false);
+    var g = wzGoal(), n = wizStep - 1;
+    if (n === 4 && sortedMs(g).length < 2) n = 3;
+    if (n < 1) { save(); closeWizard(); return; }
+    wizStep = n; save(); renderWizard(); document.getElementById("wizard").scrollTop = 0;
+  }
+
+  var wizEl = document.getElementById("wizard");
+  wizEl.addEventListener("click", function (e) {
+    var el = e.target.closest("[data-wz]"); if (!el) return;
+    var act = el.getAttribute("data-wz"), g = wzGoal();
+    if (act === "next") { wzNext(); return; }
+    if (act === "back") { wzBack(); return; }
+    if (act === "later") { wzSync(false); save(); closeWizard(); return; }
+    if (act === "home") { tab = "week"; weekOffset = 0; closeWizard(); return; }
+    wzSync(false);
+    if (act === "period") {
+      var k = el.getAttribute("data-k");
+      g.period = k;
+      if (k === "over") g.end = ""; else g.end = endFor(g.start, k);
+      save(); renderWizard(); return;
+    }
+    if (act === "addtask") {
+      var inp = wizEl.querySelector(".wz-newname");
+      if (!inp.value.trim()) { inp.focus(); return; }
+      wzAddTask(g, inp.value.trim(), +wizEl.querySelector(".wz-newimpact").value);
+      inp.value = "";
+      save(); renderWizard(); return;
+    }
+    if (act === "deltask") { var dt = +el.getAttribute("data-tid"); g.tasks = g.tasks.filter(function (t) { return t.id !== dt; }); save(); renderWizard(); return; }
+    if (act === "pin") { var pt = +el.getAttribute("data-tid"); g.tasks.forEach(function (t) { if (t.id === pt) t.pin = !t.pin; }); save(); renderWizard(); return; }
+    if (act === "addwt") {
+      var wi = wizEl.querySelector(".wz-newtodo");
+      if (!wi.value.trim()) { wi.focus(); return; }
+      wzAddTodo(g, wi.value.trim()); wi.value = ""; save(); renderWizard(); return;
+    }
+    if (act === "delwt") {
+      var wk = dstr(weekStart(0)), wid = +el.getAttribute("data-wtid");
+      g.weekTodos[wk] = wtList(g, wk).filter(function (x) { return x.id !== wid; });
+      save(); renderWizard(); return;
+    }
+  });
+  wizEl.addEventListener("change", function (e) {
+    var t = e.target, g = wzGoal();
+    if (t.hasAttribute("data-wzimp")) {
+      var tid = +t.getAttribute("data-tid");
+      g.tasks.forEach(function (x) { if (x.id === tid) x.impact = +t.value; });
+      save(); renderWizard(); return;
+    }
+    if (t.hasAttribute("data-wzf") || t.hasAttribute("data-wzm") || t.hasAttribute("data-wzwg")) {
+      wzSync(false); save();
+      var f = t.getAttribute("data-wzf");
+      if (f === "start" || f === "end") renderWizard();
+    }
+  });
+
   /* ---------- events ---------- */
   document.querySelector(".tabs").addEventListener("click", function (e) {
     var b = e.target.closest(".tab"); if (!b) return;
@@ -871,6 +1141,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var act = el.getAttribute("data-act");
     var g = ag();
 
+    if (act === "wizard") { openWizard(g, nextWizardStep(g)); return; }
     if (act === "avail") {
       var ad = el.getAttribute("data-date"), ah = el.getAttribute("data-half");
       var cur = (state.busy[ad] || []).slice();
@@ -906,7 +1177,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       if (!canAddGoal()) return;
       var ng = mkGoal(state.nextId++, "sub");
       state.goals.push(ng); activeId = ng.id; tab = "plan";
-      save(); renderView(); return;
+      save(); renderView(); openWizard(ng, 1); return;
     }
     if (act === "makemain") {
       state.goals.forEach(function (x) { x.role = x.id === g.id ? "main" : "sub"; });
@@ -936,19 +1207,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       save(); renderView(); return;
     }
     if (act === "gen") {
-      if (!g.period) { alert("期限を選んでください。"); return; }
-      if (!g.start) { alert("開始日を入れてください。"); return; }
-      if (g.period !== "over") g.end = endFor(g.start, g.period);
-      var limit = dstr(addMonths(parse(g.start), 120));
-      if (g.period === "over" && (!g.end || g.end <= limit)) { alert("「それ以降」は、10年後より先の日付を入れてください。"); return; }
+      var perr = validatePeriod(g);
+      if (perr) { alert(perr); return; }
       if (g.milestones.length && !confirm("いまの中間目標と行動を消して、つくり直します。よろしいですか？")) return;
-      g.milestones = []; g.tasks = [];
-      var selM = g.period === "over" ? 1e9 : monthsOf(g.period);
-      PERIODS.forEach(function (p) {
-        if (p.m < selM) g.milestones.push({ id: state.nextId++, title: p.label + "の目標", date: dstr(addDays(addMonths(parse(g.start), p.m), -1)) });
-      });
-      g.milestones.push({ id: state.nextId++, title: g.name || "ゴール", date: g.end });
-      sortedMs(g)[0].act = true; /* the first milestone is the first monthly goal */
+      buildMilestones(g);
       save(); renderView(); return;
     }
     if (act === "delms") {
