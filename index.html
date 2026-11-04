@@ -40,7 +40,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .sync { text-align: right; font-size: 12px; color: var(--muted); min-height: 20px; margin: -4px 0 6px; }
 .sync.warn { color: var(--warn); font-weight: 700; }
 
-.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0 0 18px; background: var(--bar-bg); padding: 4px; border-radius: 12px; }
+.tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin: 0 0 18px; background: var(--bar-bg); padding: 4px; border-radius: 12px; }
 .tab { border: 0; background: none; padding: 10px 0; border-radius: 9px; font-weight: 700; cursor: pointer; color: var(--muted); }
 .tab[aria-selected="true"] { background: var(--surface); color: var(--ink); }
 
@@ -93,6 +93,21 @@ input[type="text"], input[type="date"], input[type="email"], input[type="passwor
 .overlay { position: fixed; inset: 0; background: var(--bg); z-index: 20; overflow-y: auto; padding: calc(env(safe-area-inset-top, 0px) + 20px) 18px calc(env(safe-area-inset-bottom, 0px) + 40px); }
 .overlay > div { max-width: 520px; margin: 0 auto; }
 #auth { z-index: 30; }
+.avail { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.av-day { text-align: center; }
+.av-day svg { width: 100%; max-width: 46px; height: auto; display: block; margin: 0 auto; overflow: visible; }
+.av-h { stroke: var(--muted); stroke-width: 1.5; }
+.av-h.free { fill: var(--accent); cursor: pointer; }
+.av-h.busy { fill: var(--surface); cursor: pointer; }
+.av-h.pf { fill: var(--line); stroke: var(--line); }
+.av-h.pb { fill: none; stroke: var(--line); }
+.av-mid { stroke: var(--surface); stroke-width: 2.5; pointer-events: none; }
+.av-ring { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.av-lab { font-size: 13px; font-weight: 700; margin-top: 2px; }
+.av-date { font-size: 11px; color: var(--muted); }
+.av-day.today .av-lab, .av-day.today .av-date { color: var(--accent); font-weight: 900; }
+.av-day.past .av-lab, .av-day.past .av-date { opacity: .4; }
+.av-h:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 details.sec { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; margin-bottom: 12px; }
 details.sec > summary { padding: 14px 0; font-weight: 700; cursor: pointer; }
 details.sec[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
@@ -106,8 +121,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   <div class="sync" id="sync" aria-live="polite"></div>
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="week">ホーム</button>
-    <button class="tab" role="tab" data-tab="month">今月</button>
-    <button class="tab" role="tab" data-tab="plan">設定</button>
+    <button class="tab" role="tab" data-tab="plan">計画</button>
   </div>
   <div class="centered" style="margin:-6px 0 14px"><button class="ghost" id="whyBtn">💭 なぜやるんだっけ？</button></div>
 
@@ -137,6 +151,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   var sb = null;
   try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch (e) { sb = null; }
 
+  var DOW = ["日", "月", "火", "水", "木", "金", "土"];
   var PERIODS = [
     { k: "1m", m: 1, label: "1ヶ月後" }, { k: "3m", m: 3, label: "3ヶ月後" }, { k: "6m", m: 6, label: "6ヶ月後" },
     { k: "1y", m: 12, label: "1年後" }, { k: "3y", m: 36, label: "3年後" }, { k: "5y", m: 60, label: "5年後" }, { k: "10y", m: 120, label: "10年後" }
@@ -155,20 +170,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
   /* ---------- state ---------- */
   function mkGoal(id, role) {
-    return { id: id, role: role, name: "", why: "", note: "", memo: "", start: dstr(new Date()), end: "", period: "", milestones: [], tasks: [], weekGoals: {}, weekTodos: {}, weekReviews: {} };
+    return { id: id, role: role, name: "", future: "", why: "", note: "", memo: "", start: dstr(new Date()), end: "", period: "", milestones: [], tasks: [], weekGoals: {}, weekTodos: {}, weekReviews: {} };
   }
-  function blank() { return { goals: [mkGoal(1, "main")], done: {}, nextId: 2, maxSubs: 2 }; }
+  function blank() { return { goals: [mkGoal(1, "main")], done: {}, busy: {}, nextId: 2, maxSubs: 2 }; }
 
   /* weekly goal = one text per week; weekly todos = things to do for that goal.
      Older data stored several goal texts per week: the first stays the goal, the rest become todos. */
   function normalize(s) {
     if (s.maxSubs == null) s.maxSubs = 2;
     s.done = s.done || {};
+    s.busy = s.busy || {};
     s.goals.forEach(function (g) {
       g.milestones = g.milestones || []; g.tasks = g.tasks || [];
       g.weekGoals = g.weekGoals || {};
       g.weekTodos = g.weekTodos || {};
       g.weekReviews = g.weekReviews || {};
+      g.future = g.future || "";
       /* milestones that carry "actions" (monthly goals) are flagged act:true; older data: the earliest one */
       if (g.milestones.length && !g.milestones.some(function (m) { return m.act; })) {
         var firstM = g.milestones.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; })[0];
@@ -558,6 +575,39 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     return h + "</div>";
   }
 
+  /* 週の空き: each day is a circle split by a vertical line — left half = morning, right half = afternoon */
+  function availSvg(ds, busy, isPast, isToday, amPast) {
+    function half(which, d) {
+      var gone = isPast || (which === "am" && isToday && amPast);
+      var isBusy = busy.indexOf(which) >= 0;
+      var cls = gone ? (isBusy ? "pb" : "pf") : (isBusy ? "busy" : "free");
+      var label = (which === "am" ? "午前" : "午後") + (isBusy ? "：予定あり" : "：空き");
+      var a = gone ? "" : ' data-act="avail" data-date="' + ds + '" data-half="' + which + '" role="button" tabindex="0" aria-label="' + md(ds) + " " + label + '（押すと切り替え）"';
+      return '<path class="av-h ' + cls + '" d="' + d + '"' + a + "></path>";
+    }
+    return '<svg viewBox="0 0 48 48" aria-hidden="false">' +
+      (isToday ? '<circle cx="24" cy="24" r="22.5" class="av-ring"></circle>' : "") +
+      half("am", "M24 5 A19 19 0 0 0 24 43 Z") + half("pm", "M24 5 A19 19 0 0 1 24 43 Z") +
+      '<line x1="24" y1="5" x2="24" y2="43" class="av-mid"></line></svg>';
+  }
+  function availCard(ws) {
+    var now = new Date(), tstr = dstr(now), amPast = now.getHours() >= 12, freeLeft = 0;
+    var h = '<div class="card"><p style="margin:0 0 8px;font-weight:700">この週の空き</p><div class="avail">';
+    for (var i = 0; i < 7; i++) {
+      var d = addDays(ws, i), ds = dstr(d);
+      var isPast = ds < tstr, isToday = ds === tstr;
+      var busy = state.busy[ds] || [];
+      ["am", "pm"].forEach(function (w) {
+        var gone = isPast || (w === "am" && isToday && amPast);
+        if (!gone && busy.indexOf(w) < 0) freeLeft++;
+      });
+      h += '<div class="av-day' + (isToday ? " today" : "") + (isPast ? " past" : "") + '">' + availSvg(ds, busy, isPast, isToday, amPast) +
+        '<div class="av-lab">' + DOW[d.getDay()] + '</div><div class="av-date">' + (isToday ? "今日" : (d.getMonth() + 1) + "/" + d.getDate()) + "</div></div>";
+    }
+    h += '</div><p class="muted" style="margin:10px 0 0">あと空き：<b>' + freeLeft + '</b> コマ　<span style="font-size:12px">（左＝午前、右＝午後。色がある所が空き。タップで予定ありに切り替え）</span></p></div>';
+    return h;
+  }
+
   /* ホーム: what to focus on this week, on one screen */
   function viewWeek() {
     var g = ag();
@@ -568,7 +618,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       '(土)</b><button data-act="wknext" aria-label="次の週">›</button></div>';
     if (weekOffset !== 0) h += '<div class="centered"><button class="ghost" data-act="wknow">今週に戻る</button></div>';
     if (!planned(g)) {
-      return h + '<div class="card empty"><p>この目標の計画が、まだありません。<br>「設定」で、期限と中間目標をつくりましょう。</p><button class="primary" data-act="goplan">設定を開く</button></div>';
+      return h + '<div class="card empty"><p>この目標の計画が、まだありません。<br>「計画」で、期限と中間目標をつくりましょう。</p><button class="primary" data-act="goplan">計画を開く</button></div>';
     }
     var ref = weekOffset === 0 ? today() : wsStr;
     var m = msFor(g, ref);
@@ -593,6 +643,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var prevNext = (g.weekReviews[dstr(addDays(ws, -7))] || {}).next;
     if (prevNext) h += '<p class="muted" style="margin:12px 0 2px">先週の自分から</p><p style="margin:0;white-space:pre-wrap">' + esc(prevNext) + "</p>";
     h += "</div>";
+    h += availCard(ws);
 
     /* 2) todos for the weekly goal */
     var todos = wtList(g, wsStr);
@@ -612,7 +663,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       } else if (!m) {
         h += '<div class="card empty">' + (ref < g.start ? "開始日の前です。" : "最後の区切りの期間は終わりました。") + "</div>";
       } else {
-        h += '<div class="card empty">この週の行動はありません。<br>「設定」で、行動を追加できます。</div>';
+        h += '<div class="card empty">この週の行動はありません。<br>「計画」で、行動を追加できます。</div>';
       }
     } else ts.forEach(function (t) { h += taskRow(wsStr, t); });
 
@@ -625,13 +676,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   }
 
   /* 今月: the month at a glance — monthly goal, weekly goals, todos, and what to keep in mind */
-  function viewMonth() {
-    var g = ag();
+  function monthInner(g) {
     var now = new Date();
     var base = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
     var y = base.getFullYear(), mo = base.getMonth();
     var last = new Date(y, mo + 1, 0);
-    var h = switcher();
+    var h = "";
     h += '<div class="wk-nav"><button data-act="mprev" aria-label="前の月">‹</button><b>' + y + "年" + (mo + 1) + '月</b><button data-act="mnext" aria-label="次の月">›</button></div>';
     if (monthOffset !== 0) h += '<div class="centered"><button class="ghost" data-act="mnow">今月に戻る</button></div>';
 
@@ -646,7 +696,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     } else if (planned(g)) {
       h += '<p class="muted" style="margin:10px 0 0">この月の「月の目標」は、まだありません。</p><button class="primary" data-act="addmonthly" data-gid="' + g.id + '">月の目標をつくる</button>';
     } else {
-      h += '<p class="muted" style="margin:10px 0 0">「設定」で、期限と中間目標をつくると、ここに表示されます。</p>';
+      h += '<p class="muted" style="margin:10px 0 0">「計画」で、期限と中間目標をつくると、ここに表示されます。</p>';
     }
     h += "</div>";
 
@@ -685,14 +735,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var h = '<div><h2 style="margin-top:0">それでも、やりたい理由</h2>';
     var any = false;
     orderedGoals().forEach(function (g) {
-      if (!g.name && !g.why && !g.note) return;
+      if (!g.name && !g.why && !g.note && !g.future) return;
       any = true;
       h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<b style="font-size:18px">' + esc(gname(g)) + "</b></p>";
-      h += '<p class="muted" style="margin:10px 0 2px">どうしても叶えたい理由</p><p style="margin:0;white-space:pre-wrap">' + (g.why ? esc(g.why) : '<span class="muted">まだ書かれていません。「設定」で書いておくと、ここで見返せます。</span>') + "</p>";
+      if (g.future) h += '<p class="muted" style="margin:10px 0 2px">叶えたら待っている、嬉しい未来</p><p style="margin:0;white-space:pre-wrap">' + esc(g.future) + "</p>";
+      h += '<p class="muted" style="margin:10px 0 2px">どうしても叶えたい理由</p><p style="margin:0;white-space:pre-wrap">' + (g.why ? esc(g.why) : '<span class="muted">まだ書かれていません。「計画」で書いておくと、ここで見返せます。</span>') + "</p>";
       if (g.note) h += '<p class="muted" style="margin:10px 0 2px">やめたくなったときの自分へ</p><p style="margin:0;white-space:pre-wrap">' + esc(g.note) + "</p>";
       h += "</div>";
     });
-    if (!any) h += '<div class="card"><p class="muted" style="margin:0">まだ書かれていません。「設定」で、なりたい自分と理由を書いておくと、ここで見返せます。</p></div>';
+    if (!any) h += '<div class="card"><p class="muted" style="margin:0">まだ書かれていません。「計画」で、なりたい自分と理由を書いておくと、ここで見返せます。</p></div>';
     h += '<div class="card"><p class="muted" style="margin:0 0 4px">ここまでの積み重ね</p><p style="margin:0"><b>' + count + "回</b>の行動</p></div>";
     var rest = null, wsStr = dstr(weekStart(0));
     orderedGoals().some(function (g) {
@@ -752,9 +803,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     if (state.goals.length > 1) h += '<button class="ghost" data-act="delgoal">この目標を削除</button>';
     h += "</div></div>";
 
+    h += secStart("month", g, "今月の計画（月の目標・週の目標）", true) + monthInner(g) + '<div style="height:6px"></div></details>';
     h += secStart("basic", g, "なりたい自分・理由・メモ", !g.name) +
       '<label class="l">なりたい自分</label>' +
       '<input type="text" data-gf="name" maxlength="40" value="' + esc(g.name) + '" placeholder="例：毎朝ランニングする自分">' +
+      '<label class="l">それを叶えたら待っている、嬉しい未来</label><textarea data-gf="future" rows="3" maxlength="500" placeholder="例：朝のランニングが気持ちよくて、仕事にも自信が持てている">' + esc(g.future || "") + "</textarea>" +
       '<label class="l">どうしても叶えたい理由（あとで見返す）</label><textarea data-gf="why" rows="3" maxlength="500" placeholder="どうしても叶えたい、本当の理由">' + esc(g.why || "") + "</textarea>" +
       '<label class="l">やめたくなったときの自分へ</label><textarea data-gf="note" rows="3" maxlength="500" placeholder="立ち上がるための一言">' + esc(g.note || "") + "</textarea>" +
       '<label class="l">メモ（内訳・考えたこと）</label><textarea data-gf="memo" rows="6" maxlength="2000" placeholder="例：月収100万円の内訳&#10;・誰から：&#10;・どんなサービスで：&#10;・いくら × 何件：">' + esc(g.memo || "") + "</textarea>" +
@@ -797,7 +850,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   function renderView() {
     renderTabs();
     var v = document.getElementById("view");
-    v.innerHTML = tab === "week" ? viewWeek() : tab === "month" ? viewMonth() : viewPlan();
+    v.innerHTML = tab === "week" ? viewWeek() : viewPlan();
   }
 
   /* ---------- events ---------- */
@@ -807,12 +860,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   });
 
   var view = document.getElementById("view");
+  view.addEventListener("keydown", function (e) {
+    if ((e.key === "Enter" || e.key === " ") && e.target.getAttribute && e.target.getAttribute("data-act") === "avail") {
+      e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+  });
 
   view.addEventListener("click", function (e) {
     var el = e.target.closest("[data-act]"); if (!el) return;
     var act = el.getAttribute("data-act");
     var g = ag();
 
+    if (act === "avail") {
+      var ad = el.getAttribute("data-date"), ah = el.getAttribute("data-half");
+      var cur = (state.busy[ad] || []).slice();
+      var ix = cur.indexOf(ah);
+      if (ix >= 0) cur.splice(ix, 1); else cur.push(ah);
+      if (cur.length) state.busy[ad] = cur; else delete state.busy[ad];
+      save(); renderView(); return;
+    }
     if (act === "toggle") { toggle(el.getAttribute("data-date"), +el.getAttribute("data-tid")); return; }
     if (act === "goplan") { tab = "plan"; renderView(); return; }
     if (act === "wkprev") { weekOffset--; renderView(); return; }
