@@ -174,7 +174,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
   /* ---------- state ---------- */
   function mkGoal(id, role) {
-    return { id: id, role: role, name: "", future: "", why: "", note: "", memo: "", start: dstr(new Date()), end: "", period: "", milestones: [], tasks: [], weekGoals: {}, weekTodos: {}, weekReviews: {} };
+    return { id: id, role: role, name: "", why: "", note: "", memo: "", start: dstr(new Date()), end: "", period: "", milestones: [], tasks: [], weekGoals: {}, weekTodos: {}, weekReviews: {} };
   }
   function blank() { return { goals: [mkGoal(1, "main")], done: {}, busy: {}, nextId: 2, maxSubs: 2 }; }
 
@@ -189,7 +189,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       g.weekGoals = g.weekGoals || {};
       g.weekTodos = g.weekTodos || {};
       g.weekReviews = g.weekReviews || {};
-      g.future = g.future || "";
+      /* the "happy future" field was merged into "why": keep the old text so nothing is lost */
+      if (g.future) { g.why = g.why ? g.future + "\n\n" + g.why : g.future; }
+      delete g.future;
       /* milestones that carry "actions" (monthly goals) are flagged act:true; older data: the earliest one */
       if (g.milestones.length && !g.milestones.some(function (m) { return m.act; })) {
         var firstM = g.milestones.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; })[0];
@@ -744,10 +746,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var h = '<div><h2 style="margin-top:0">それでも、やりたい理由</h2>';
     var any = false;
     orderedGoals().forEach(function (g) {
-      if (!g.name && !g.why && !g.note && !g.future) return;
+      if (!g.name && !g.why && !g.note) return;
       any = true;
       h += '<div class="card"><p style="margin:0">' + roleTag(g) + '<b style="font-size:18px">' + esc(gname(g)) + "</b></p>";
-      if (g.future) h += '<p class="muted" style="margin:10px 0 2px">叶えたら待っている、嬉しい未来</p><p style="margin:0;white-space:pre-wrap">' + esc(g.future) + "</p>";
       h += '<p class="muted" style="margin:10px 0 2px">どうしても叶えたい理由</p><p style="margin:0;white-space:pre-wrap">' + (g.why ? esc(g.why) : '<span class="muted">まだ書かれていません。「計画」で書いておくと、ここで見返せます。</span>') + "</p>";
       if (g.note) h += '<p class="muted" style="margin:10px 0 2px">やめたくなったときの自分へ</p><p style="margin:0;white-space:pre-wrap">' + esc(g.note) + "</p>";
       h += "</div>";
@@ -817,8 +818,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     h += secStart("basic", g, "なりたい自分・理由・メモ", !g.name) +
       '<label class="l">なりたい自分</label>' +
       '<input type="text" data-gf="name" maxlength="40" value="' + esc(g.name) + '" placeholder="例：毎朝ランニングする自分">' +
-      '<label class="l">それを叶えたら待っている、嬉しい未来</label><textarea data-gf="future" rows="3" maxlength="500" placeholder="例：朝のランニングが気持ちよくて、仕事にも自信が持てている">' + esc(g.future || "") + "</textarea>" +
-      '<label class="l">どうしても叶えたい理由（あとで見返す）</label><textarea data-gf="why" rows="3" maxlength="500" placeholder="どうしても叶えたい、本当の理由">' + esc(g.why || "") + "</textarea>" +
+      '<label class="l">どうしても叶えたい理由（叶えたら、どんな毎日が待っている？ なぜ、それが必要？）</label><textarea data-gf="why" rows="5" maxlength="800" placeholder="例：朝のランニングが気持ちよくて、仕事にも自信が持てている毎日にしたい。今の自分に自信が持てなくて、変わりたいから。">' + esc(g.why || "") + "</textarea>" +
       '<label class="l">やめたくなったときの自分へ</label><textarea data-gf="note" rows="3" maxlength="500" placeholder="立ち上がるための一言">' + esc(g.note || "") + "</textarea>" +
       '<label class="l">メモ（内訳・考えたこと）</label><textarea data-gf="memo" rows="6" maxlength="2000" placeholder="例：月収100万円の内訳&#10;・誰から：&#10;・どんなサービスで：&#10;・いくら × 何件：">' + esc(g.memo || "") + "</textarea>" +
       '<label class="l">開始日</label><input type="date" data-gf="start" value="' + esc(g.start) + '" style="margin-bottom:14px"></details>';
@@ -836,19 +836,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       h += secStart("ms", g, "中間目標と月の目標（行動）", false);
       h += '<p class="muted" style="margin:0 0 6px">節目（中間目標）に向けて、1か月ごとに「月の目標」をつくって進めます。いまの月の目標が終わったら、次の月の目標をつくりましょう。</p><button class="primary" style="margin:0 0 12px" data-act="addmonthly" data-gid="' + g.id + '">＋ 次の月の目標をつくる</button>';
       ms.forEach(function (m) {
-        h += '<div class="card" data-mid="' + m.id + '"><div class="ms-head"><input type="text" data-mf="title" maxlength="40" value="' + esc(m.title) + '" aria-label="中間目標の名前">' +
+        h += '<div class="card" data-mid="' + m.id + '"><div class="ms-head"><input type="text" data-mf="title" maxlength="60" value="' + esc(m.title) + '" aria-label="中間目標の名前">' +
           '<button class="del" data-act="delms" aria-label="この中間目標を削除">×</button></div>' +
           '<input type="date" data-mf="date" value="' + esc(m.date) + '" aria-label="達成する日">' +
           '<textarea data-mf="memo" rows="3" maxlength="1000" style="margin-top:8px" placeholder="この中間目標のメモ（例：内訳、必要なこと）" aria-label="この中間目標のメモ">' + esc(m.memo || "") + "</textarea>";
         if (!m.act) { h += "</div>"; return; }
         var ts = g.tasks.filter(function (t) { return t.mid === m.id; }).sort(function (a, b) { return (b.impact || 0) - (a.impact || 0); });
-        h += '<div style="margin-top:14px"><span class="muted">期間：' + md(periodStart(g, m)) + "〜" + md(m.date) + '</span><br><b>この目標を100%達成する行動（' + ts.length + ' / 10）</b><p class="muted" style="margin:4px 0 8px">📌センターピン＝倒せば他も連鎖して倒れやすい、一番大事な行動。いくつでも選べます（複数OK）。影響度（1〜10）は、その行動が目標達成にどれだけ効くか。高い順に並びます。</p>';
+        h += '<div style="margin-top:14px"><span class="muted">期間：' + md(periodStart(g, m)) + "〜" + md(m.date) + '</span><br><b>この目標を100%達成する行動（' + ts.length + ' / 10）</b><p class="muted" style="margin:4px 0 8px">📌センターピン＝倒せば他も連鎖して倒れやすい、一番大事な行動。いくつでも選べます（複数OK）。影響度（1〜10）は、行動を書き出したあとに、それぞれの右下で付けます（その行動が目標達成にどれだけ効くか。高い順に並びます）。</p>';
         ts.forEach(function (t) {
           h += '<div class="tr" data-tid="' + t.id + '"><button class="del" style="width:36px;height:36px;font-size:18px;' + (t.pin ? "" : "opacity:.3;") + '" data-act="pin" aria-label="センターピンにする" aria-pressed="' + !!t.pin + '">📌</button><span class="nm">' + esc(t.name) + '</span><button class="del" data-act="deltask" aria-label="削除">×</button>' + impactLine(t) + "</div>";
         });
         h += "</div>";
         if (ts.length >= 10) { h += '<p class="muted" style="margin-top:10px">10個そろいました。</p></div>'; return; }
-        h += '<div class="add-t"><input type="text" class="newname" maxlength="30" placeholder="行動を追加（例：5分走る）" aria-label="行動の名前"><div class="imp" style="padding:0"><span>影響度（1〜10）</span><select class="newimpact" aria-label="影響度">' + impactOptions(5) + '</select></div>';
+        h += '<div class="add-t"><input type="text" class="newname" maxlength="30" placeholder="行動を追加（例：5分走る）" aria-label="行動の名前">';
         h += '<button class="primary" style="margin-top:0" data-act="addtask">追加</button></div></div>';
       });
       h += "</details>";
@@ -867,12 +867,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   var wizStep = 1, wizId = null;
   var WZ = [
     { t: "なりたい自分を、一言で", why: "まず、ゴールの姿をはっきりさせます。" },
-    { t: "どうしても叶えたい理由", why: "続けるのがつらくなったとき、立ち上がるためのものです。「💭 なぜやるんだっけ？」の画面に表示されます。" },
+    { t: "どうしても叶えたい理由", why: "叶えた先の景色と、その理由を、まとめて書きます。続けるのがつらくなったとき、立ち上がるためのものです。「💭 なぜやるんだっけ？」の画面に表示されます。" },
     { t: "いつまでに、なりたい？", why: "期限を選ぶと、そこから逆算して「節目」（期限までの途中の目標）が自動でできます。" },
-    { t: "節目の確認", why: "それぞれの節目で、どんな状態になっていたいかを、一言で書きます。" },
-    { t: "最初の月の目標と、行動", why: "いちばん近い節目が、最初の「月の目標」です。その1か月で、やることを決めます。" },
+    { t: "節目の確認", why: "それぞれの節目で、どんな状態になっていたいかを、一言で書きます。いちばん近い節目が、最初の「月の目標」になります。" },
+    { t: "最初の1か月の行動を、書き出す", why: "最初の月の目標を達成するために必要な行動を、思いつくだけ書き出します。順番や重さは、考えなくてOKです。" },
+    { t: "どれが、いちばん効く？", why: "書き出した行動に、目標達成への「影響度」を付けます。いちばん大事な行動には、📌（センターピン）をつけます。" },
     { t: "今週の目標と、やること", why: "今週に落とし込みます。このあとは、毎日「ホーム」を見るだけでOKです。" }
   ];
+  function isDefaultTitle(t) { return PERIODS.some(function (p) { return t === p.label + "の目標"; }); }
   function wzGoal() { return state.goals.filter(function (x) { return x.id === wizId; })[0] || ag(); }
   function wzEx(text) { return '<div class="wiz-ex">例：' + text + "</div>"; }
 
@@ -890,7 +892,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     g.milestones = []; g.tasks = [];
     var selM = g.period === "over" ? 1e9 : monthsOf(g.period);
     PERIODS.forEach(function (p) {
-      if (p.m < selM) g.milestones.push({ id: state.nextId++, title: p.label + "の目標", date: dstr(addDays(addMonths(parse(g.start), p.m), -1)) });
+      if (p.m < selM) g.milestones.push({ id: state.nextId++, title: p.label + "の目標", label: p.label, date: dstr(addDays(addMonths(parse(g.start), p.m), -1)) });
     });
     g.milestones.push({ id: state.nextId++, title: g.name || "ゴール", date: g.end });
     sortedMs(g)[0].act = true; /* the first milestone is the first monthly goal */
@@ -901,7 +903,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     if (!planned(g)) return g.why ? 3 : 2;
     var first = sortedMs(g)[0];
     if (!g.tasks.some(function (t) { return t.mid === first.id; })) return 5;
-    if (!wgText(g, dstr(weekStart(0)))) return 6;
+    if (!g.tasks.some(function (t) { return t.mid === first.id && t.impact; })) return 6;
+    if (!wgText(g, dstr(weekStart(0)))) return 7;
     return 1;
   }
 
@@ -912,21 +915,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     if (g.period && g.period !== "over" && g.start) g.end = endFor(g.start, g.period);
     Array.prototype.forEach.call(root.querySelectorAll("[data-wzm]"), function (i) {
       var mid = +i.getAttribute("data-mid");
-      g.milestones.forEach(function (m) { if (m.id === mid) m[i.getAttribute("data-wzm")] = i.value; });
+      var fld = i.getAttribute("data-wzm");
+      g.milestones.forEach(function (m) {
+        if (m.id !== mid) return;
+        if (fld === "title") { if (i.value.trim()) m.title = i.value.trim(); } else m[fld] = i.value;
+      });
     });
     var w = root.querySelector("[data-wzwg]");
     if (w) g.weekGoals[wsStr] = w.value.trim();
     if (addPending) {
       var nt = root.querySelector(".wz-newname");
-      if (nt && nt.value.trim()) wzAddTask(g, nt.value.trim(), +root.querySelector(".wz-newimpact").value);
+      if (nt && nt.value.trim()) wzAddTask(g, nt.value.trim());
       var nw = root.querySelector(".wz-newtodo");
       if (nw && nw.value.trim()) wzAddTodo(g, nw.value.trim());
     }
   }
-  function wzAddTask(g, name, impact) {
+  function wzAddTask(g, name) {
     var m = sortedMs(g)[0];
     if (!m || g.tasks.filter(function (t) { return t.mid === m.id; }).length >= 10) return false;
-    g.tasks.push({ id: state.nextId++, mid: m.id, name: name, impact: impact });
+    g.tasks.push({ id: state.nextId++, mid: m.id, name: name });
     return true;
   }
   function wzAddTodo(g, name) {
@@ -938,14 +945,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var h = "";
     if (wizStep === 1) {
       h += '<label class="l">なりたい自分（一言で）</label><input type="text" data-wzf="name" maxlength="40" value="' + esc(g.name) + '" placeholder="なりたい自分は？">' +
-        wzEx("毎朝ランニングする自分／月収100万円を稼ぐ自分／英語で仕事ができる自分") +
-        '<label class="l">それを叶えたら待っている、嬉しい未来（あとで書いてもOK）</label><textarea data-wzf="future" rows="3" maxlength="500" placeholder="どんな毎日になっている？">' + esc(g.future || "") + "</textarea>" +
-        wzEx("朝のランニングが気持ちよくて、仕事にも自信が持てている");
+        wzEx("毎朝ランニングする自分／月収100万円を稼ぐ自分／英語で仕事ができる自分");
     } else if (wizStep === 2) {
-      h += '<label class="l">どうしても叶えたい理由</label><textarea data-wzf="why" rows="4" maxlength="500" placeholder="本当の理由を、正直に">' + esc(g.why || "") + "</textarea>" +
-        wzEx("今の自分に自信が持てなくて、変わりたいから。家族に、いい姿を見せたいから") +
-        '<label class="l">やめたくなったときの自分へ（あとで書いてもOK）</label><textarea data-wzf="note" rows="3" maxlength="500" placeholder="立ち上がるための一言">' + esc(g.note || "") + "</textarea>" +
-        wzEx("ここまでやってきたのだから、あと5分だけやってみよう");
+      h += '<label class="l">叶えたら、どんな毎日が待っている？ なぜ、それがどうしても必要？</label><textarea data-wzf="why" rows="6" maxlength="800" placeholder="思いつくまま、正直に">' + esc(g.why || "") + "</textarea>" +
+        wzEx("朝のランニングが気持ちよくて、仕事にも自信が持てている毎日にしたい。今の自分に自信が持てなくて、変わりたいから。家族に、いい姿を見せたいから") +
+        '<p class="muted" style="margin:0">つらくなったときの、自分への一言は、あとで「計画」から書けます。</p>';
     } else if (wizStep === 3) {
       h += '<div class="chips">';
       PERIODS.forEach(function (p) { h += '<button class="chip" style="min-width:76px" data-wz="period" data-k="' + p.k + '" aria-pressed="' + (g.period === p.k) + '">' + p.label + "</button>"; });
@@ -956,9 +960,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
         '<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">開始日を変える（ふつうは、今日のままでOK）</summary><input type="date" data-wzf="start" value="' + esc(g.start) + '"></details>';
     } else if (wizStep === 4) {
       var ms = sortedMs(g);
-      ms.slice(0, -1).forEach(function (m) {
-        h += '<div class="card"><b>' + esc(m.title) + '</b> <span class="muted">' + md(m.date) + "まで</span>" +
-          '<label class="l">そのとき、どんな状態になっていたい？</label><textarea data-wzm="memo" data-mid="' + m.id + '" rows="2" maxlength="1000" placeholder="一言でOK">' + esc(m.memo || "") + "</textarea></div>";
+      ms.slice(0, -1).forEach(function (m, idx) {
+        h += '<div class="card"><b>' + esc(m.label || (md(m.date) + "まで")) + '</b> <span class="muted">' + md(m.date) + "まで" + (idx === 0 ? "（これが、最初の月の目標になります）" : "") + "</span>" +
+          '<label class="l">そのとき、どんな状態になっていたい？</label><input type="text" data-wzm="title" data-mid="' + m.id + '" maxlength="60" value="' + esc(isDefaultTitle(m.title) ? "" : m.title) + '" placeholder="一言でOK"></div>';
       });
       h += wzEx("朝ランが週3回、続いている／売上が月10万円になっている") +
         '<div class="card" style="margin-top:12px"><b>最終目標</b> <span class="muted">' + esc(g.name) + "（" + md(g.end) + "）</span></div>" +
@@ -966,24 +970,29 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
         '<p class="muted" style="margin:6px 0 0">チェックできないときは、節目の内容を見直してみましょう（このまま進んでもOKです）。</p>';
     } else if (wizStep === 5) {
       var msL = sortedMs(g), first = msL[0], only = msL.length === 1;
-      if (only) h += '<div class="card"><b>' + esc(g.name) + '</b> <span class="muted">（' + md(first.date) + "まで）</span></div>";
-      else {
-        h += '<label class="l">' + md(periodStart(g, first)) + "〜" + md(first.date) + "の間に、どうなっていたい？（月の目標の名前）</label>" +
-          '<input type="text" data-wzm="title" data-mid="' + first.id + '" maxlength="40" value="' + esc(first.title) + '">' + wzEx("朝ランが週3回できている／集客の導線が3つある");
-      }
+      h += '<div class="card"><p class="muted" style="margin:0">最初の月の目標</p><p style="margin:0;font-weight:700">' + esc(only ? g.name : first.title) +
+        ' <span class="muted" style="font-weight:400">（' + md(periodStart(g, first)) + "〜" + md(first.date) + "）</span></p></div>";
       var ts = g.tasks.filter(function (t) { return t.mid === first.id; });
       h += '<p style="margin:16px 0 4px"><b>この目標を100%達成するための行動（' + ts.length + ' / 10）</b></p>' +
         '<p class="muted" style="margin:0 0 6px">思いつくものを書き出しましょう。まず3個でもOKです（最大10個）。</p>' + wzEx("朝6時に起きる／ランニングシューズを買う／5分だけ走る");
       ts.forEach(function (t) {
-        var v = t.impact || 0;
-        h += '<div class="tr" data-tid="' + t.id + '"><button class="del" style="width:36px;height:36px;font-size:18px;' + (t.pin ? "" : "opacity:.3;") + '" data-wz="pin" data-tid="' + t.id + '" aria-label="センターピンにする">📌</button><span class="nm">' + esc(t.name) +
-          '</span><button class="del" data-wz="deltask" data-tid="' + t.id + '" aria-label="削除">×</button><div class="imp"><span>影響度</span><div class="ibar"><i style="width:' + v * 10 + '%"></i></div><select data-wzimp data-tid="' + t.id + '" aria-label="影響度"><option value="0"' + (v ? "" : " selected") + ">未設定</option>" + impactOptions(v) + "</select></div></div>";
+        h += '<div class="tr" data-tid="' + t.id + '"><span class="nm">' + esc(t.name) + '</span><button class="del" data-wz="deltask" data-tid="' + t.id + '" aria-label="削除">×</button></div>';
       });
       if (ts.length < 10) {
-        h += '<div class="add-t"><input type="text" class="wz-newname" maxlength="30" placeholder="行動を1つ書く" aria-label="行動の名前"><div class="imp" style="padding:0"><span>影響度（1〜10）</span><select class="wz-newimpact" aria-label="影響度">' + impactOptions(5) + '</select></div><button class="primary" style="margin-top:0" data-wz="addtask">この行動を追加</button></div>';
+        h += '<div class="add-t"><input type="text" class="wz-newname" maxlength="30" placeholder="行動を1つ書く" aria-label="行動の名前"><button class="primary" style="margin-top:0" data-wz="addtask">この行動を追加</button></div>';
       }
-      h += '<p class="muted" style="margin:12px 0 0">📌センターピン＝これが進むと、他も進みやすい、いちばん大事な行動（複数OK）。影響度＝目標達成にどれだけ効くか。分からなければ、あとで決めてOKです。</p>';
     } else if (wizStep === 6) {
+      var first6 = sortedMs(g)[0];
+      var ts6 = g.tasks.filter(function (t) { return t.mid === first6.id; });
+      h += '<p class="muted" style="margin:0 0 6px">各行動の右下で、影響度を1〜10から選びます。いちばん大事な行動には、左の📌を押します（複数OK）。</p>' +
+        wzEx("影響度：10＝これをやれば大きく近づく／1＝あまり効かない。📌＝これが進むと、他も進みやすい行動");
+      ts6.forEach(function (t) {
+        var v = t.impact || 0;
+        h += '<div class="tr" data-tid="' + t.id + '"><button class="del" style="width:36px;height:36px;font-size:18px;' + (t.pin ? "" : "opacity:.3;") + '" data-wz="pin" data-tid="' + t.id + '" aria-label="センターピンにする">📌</button><span class="nm">' + esc(t.name) +
+          '</span><div class="imp"><span>影響度</span><div class="ibar"><i style="width:' + v * 10 + '%"></i></div><select data-wzimp data-tid="' + t.id + '" aria-label="影響度"><option value="0"' + (v ? "" : " selected") + ">未設定</option>" + impactOptions(v) + "</select></div></div>";
+      });
+      h += '<p class="muted" style="margin:12px 0 0">迷ったら、あとで決めてもOKです（「計画」から変えられます）。</p>';
+    } else if (wizStep === 7) {
       var wsStr = dstr(weekStart(0));
       h += '<label class="l">この週（' + md(wsStr) + "〜）の目標</label>" +
         '<input type="text" data-wzwg maxlength="60" value="' + esc(wgText(g, wsStr)) + '" placeholder="今週、どうなっていたい？">' + wzEx("朝ランを3回やる／お客さんに3人、声をかける");
@@ -1002,12 +1011,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     var wsStr = dstr(weekStart(0)), ms = sortedMs(g), first = ms[0];
     var h = '<div><h2 style="margin:20px 0 4px;font-size:22px">できました 🎉</h2><p class="muted" style="margin:0 0 12px">いまの内容は、こうなっています。あとから、いつでも「計画」で直せます。</p>';
     h += '<div class="card"><p class="muted" style="margin:0">なりたい自分</p><p class="goal-name" style="margin:0">' + esc(g.name) + "</p>";
-    if (g.future) h += '<p class="muted" style="margin:8px 0 0">嬉しい未来：' + esc(g.future) + "</p>";
+    if (g.why) h += '<p class="muted" style="margin:8px 0 0;white-space:pre-wrap">理由：' + esc(g.why) + "</p>";
     if (g.end) h += '<p class="muted" style="margin:8px 0 0">期限：' + g.end.replace(/-/g, "/") + "</p>";
     h += "</div>";
     if (ms.length > 1) {
       h += '<div class="card"><p class="muted" style="margin:0 0 4px">節目</p>';
-      ms.forEach(function (m) { h += "<p style=\"margin:0\">・" + md(m.date) + "　" + esc(m.memo ? m.memo : m.title) + "</p>"; });
+      ms.forEach(function (m) { h += "<p style=\"margin:0\">・" + md(m.date) + "　" + esc(m.title) + "</p>"; });
       h += "</div>";
     }
     if (first) {
@@ -1017,21 +1026,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     }
     var wg = wgText(g, wsStr);
     h += '<div class="card"><p class="muted" style="margin:0">今週の目標</p><p style="margin:0;font-weight:700">' + (wg ? esc(wg) : '<span class="muted" style="font-weight:400">まだ決まっていません</span>') + "</p></div>";
+    h += '<p class="muted" style="margin:0 0 10px">つらくなったときのために、「計画」の「なりたい自分・理由・メモ」に、自分への一言を書いておけます。</p>';
     h += '<button class="primary" data-wz="home">ホームを開く</button></div>';
     return h;
   }
 
   function renderWizard() {
     var g = wzGoal(), el = document.getElementById("wizard");
-    if (wizStep > 6) { el.innerHTML = wzDone(g); return; }
+    if (wizStep > 7) { el.innerHTML = wzDone(g); return; }
     /* keep text that was typed but not added yet, so a re-render does not erase it */
     var oldName = el.querySelector(".wz-newname"), oldTodo = el.querySelector(".wz-newtodo");
     var keepName = oldName ? oldName.value : "", keepTodo = oldTodo ? oldTodo.value : "";
     var meta = WZ[wizStep - 1];
-    var h = '<div><p class="muted" style="margin:0 0 6px">ステップ ' + wizStep + " / 6</p>" +
-      '<div class="bar" style="height:8px"><div class="bar-fill" style="width:' + Math.round(wizStep / 6 * 100) + '%"></div></div>' +
+    var h = '<div><p class="muted" style="margin:0 0 6px">ステップ ' + wizStep + " / 7</p>" +
+      '<div class="bar" style="height:8px"><div class="bar-fill" style="width:' + Math.round(wizStep / 7 * 100) + '%"></div></div>' +
       '<h2 style="margin:16px 0 4px;font-size:20px">' + meta.t + '</h2><p class="muted" style="margin:0 0 12px">' + meta.why + "</p>" + wzBody(g);
-    h += '<button class="primary" data-wz="next">' + (wizStep === 6 ? "完了" : "次へ") + "</button>" +
+    h += '<button class="primary" data-wz="next">' + (wizStep === 7 ? "完了" : "次へ") + "</button>" +
       '<div style="display:flex;justify-content:space-between;margin-top:6px"><button class="ghost" data-wz="back">← 戻る</button><button class="ghost" data-wz="later">あとで続ける</button></div></div>';
     el.innerHTML = h;
     var nn = el.querySelector(".wz-newname"), nt = el.querySelector(".wz-newtodo");
@@ -1048,6 +1058,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     renderView();
   }
 
+  function wzHasTasks(g) {
+    var m = sortedMs(g)[0];
+    return !!m && g.tasks.some(function (t) { return t.mid === m.id; });
+  }
   function wzNext() {
     wzSync(true);
     var g = wzGoal();
@@ -1064,11 +1078,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     }
     var n = wizStep + 1;
     if (n === 4 && sortedMs(g).length < 2) n = 5;
+    if (n === 6 && !wzHasTasks(g)) n = 7;
     wizStep = n; save(); renderWizard(); document.getElementById("wizard").scrollTop = 0;
   }
   function wzBack() {
     wzSync(false);
     var g = wzGoal(), n = wizStep - 1;
+    if (n === 6 && !wzHasTasks(g)) n = 5;
     if (n === 4 && sortedMs(g).length < 2) n = 3;
     if (n < 1) { save(); closeWizard(); return; }
     wizStep = n; save(); renderWizard(); document.getElementById("wizard").scrollTop = 0;
@@ -1092,7 +1108,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     if (act === "addtask") {
       var inp = wizEl.querySelector(".wz-newname");
       if (!inp.value.trim()) { inp.focus(); return; }
-      wzAddTask(g, inp.value.trim(), +wizEl.querySelector(".wz-newimpact").value);
+      wzAddTask(g, inp.value.trim());
       inp.value = "";
       save(); renderWizard(); return;
     }
@@ -1227,7 +1243,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
       if (!name) { input.focus(); return; }
       var cm = +card.getAttribute("data-mid");
       if (g.tasks.filter(function (t) { return t.mid === cm; }).length >= 10) return;
-      g.tasks.push({ id: state.nextId++, mid: cm, name: name, impact: +card.querySelector(".newimpact").value });
+      g.tasks.push({ id: state.nextId++, mid: cm, name: name });
       save(); renderView(); return;
     }
     if (act === "pin") {
